@@ -1,0 +1,52 @@
+# Stage II：技能蒸馏 + 上下文先验（论文附录表 6、B.3）
+
+teacher_collection:
+  num_envs: 4096
+  horizon: 32
+  # 每条序列按动作类别选对应的 Stage I 专家来跑 rollout
+  # 没有物体观测的序列，物体运动学输入补零
+
+vqvae:
+  encoder: { hidden: [1024, 1024, 768, 512], activation: relu }
+  decoder: { hidden: [1024, 1024, 768, 512], activation: relu }
+  codebook:
+    size: 1024          # K
+    dim: 64
+    num_quantizers: 1
+    ema_decay: 0.99
+  commitment_beta: 0.25
+  straight_through: true   # z̃ = z + sg[z_q - z]
+  loss: bc_nll + commitment   # 行为克隆 NLL + 承诺损失
+
+prior:
+  backbone:
+    type: transformer
+    num_layers: 4
+    d_model: 512
+    num_heads: 8
+    ffn_dim: 1536
+    activation: gelu
+    dropout: 0.0
+  history_frames: 5           # 本体感知历史
+  output: categorical_1024    # 预测技能 token
+  modality_mask_prob: 0.3     # 每个可用模态独立 mask
+
+# 统一条件接口：每个模态一个 tokenizer，映射到 d_model 维
+context_modalities:
+  height:  { source: local_heightmap, size: [16, 16], extent_m: 1.6 }
+  bps:     { source: object_basis_point_set }
+  prox:    { source: per_joint_distance_to_object_surface }
+goal_modalities:
+  human:   { source: target_location_10d_padded }
+  object:  { source: object_target_location }
+  text:    { source: clip_embedding, optional: true }   # 只有 OMOMO 有
+
+optim:
+  optimizer: adamw
+  lr: 2.0e-4
+  lr_schedule: constant
+  minibatch_size: 8192
+  mini_epochs: 3
+  grad_clip: 1.0
+
+token_hz: 50

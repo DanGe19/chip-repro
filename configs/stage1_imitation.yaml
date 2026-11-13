@@ -1,0 +1,54 @@
+# Stage I：动作模仿专家（论文附录表 5、表 8）
+# 每类动作训一个专家：locomotion+box、TRUMANS(idle)、以及 OMOMO 的 4 个物体各一个
+
+sim:
+  physics_hz: 200
+  control_hz: 50
+  num_envs: 4096          # 表 5 没写，按表 6 的教师采集环境数取
+  robot: unitree_g1_29dof
+
+observation:
+  future_reference_frames: 1    # 表 5：Future-reference input = One frame
+  include_object_kinematics: true   # HOI 专家才有，HSI 专家补零
+
+network:
+  actor:   { hidden: [512, 256, 128], activation: elu, output: tanh }
+  critic:  { hidden: [512, 256, 128], activation: elu, output: linear }
+
+ppo:
+  optimizer: adamw
+  lr: 1.0e-3
+  lr_schedule: adaptive
+  weight_decay: 1.0e-6
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_eps: 0.2
+  actor_loss_coef: 1.0
+  critic_loss_coef: 1.0
+  entropy_coef: 0.005
+  rollout_horizon: 24
+  minibatch_size: 24576
+  mini_epochs: 5
+  grad_clip: 1.0
+
+episode:
+  reference_state_init: true        # 从参考动作的随机帧开始
+  kinematic_early_termination: true # 偏离参考太远就终止
+
+# 跟踪奖励，每项是 RBF 核 K_σ(e) = exp(-e² / σ²)，权重和带宽来自表 8。
+# "anchor" = 骨盆；"relative body" = 各 body 相对骨盆对齐后的位姿；
+# 整体奖励乘以 Δt。带宽固定，不做自适应。
+reward:
+  anchor_pos:        { weight: 0.5, sigma: 0.30 }    # m
+  anchor_rot:        { weight: 0.5, sigma: 0.40 }    # rad
+  body_pos:          { weight: 1.0, sigma: 0.30 }    # m
+  body_rot:          { weight: 1.0, sigma: 0.40 }    # rad
+  body_lin_vel:      { weight: 1.0, sigma: 1.00 }    # m/s
+  body_ang_vel:      { weight: 1.0, sigma: 3.14 }    # rad/s
+  object_rel_pos:    { weight: 0.5, sigma: 0.30 }    # m，只有 HOI 专家且物体激活时非零
+  object_rot:        { weight: 0.5, sigma: 0.40 }    # rad
+  penalties:
+    action_rate:        -0.1
+    joint_limit:        -10.0
+    undesired_contact:  -0.1    # 手腕和脚踝允许接触，其它 link 接触力 > 1 N 即算
+

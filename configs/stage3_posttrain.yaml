@@ -1,0 +1,105 @@
+# Stage III：先验正则的 PPO 后训练（论文附录表 7、表 9、C.1–C.3）
+
+sim:
+  num_envs: 4096
+  control_hz: 50
+  token_hz: 50
+
+policy:
+  init_from: pretrained_prior          # 任务策略从先验初始化
+  trainable: [task_policy]
+  frozen: [interaction_prior, vq_decoder, codebook]
+  actor:
+    type: transformer
+    num_layers: 4
+    d_model: 512
+    num_heads: 8
+    ffn_dim: 1536
+    activation: gelu
+    dropout: 0.0
+    output: categorical_1024
+  history_frames: 5
+  critic:
+    inputs: [privileged_state, target_location, local_heightmap]
+    type: transformer
+    num_layers: 2
+    d_model: 512
+    num_heads: 4
+    ffn_dim: 1024
+    head: [512, 256, 1]
+
+ppo:
+  optimizer: adamw
+  lr: 5.0e-5
+  weight_decay: 1.0e-6
+  lr_schedule: constant
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_eps: 0.2
+  rollout_horizon: 32
+  minibatch_size: 8192
+  mini_epochs: 2
+  grad_clip: 1.0
+
+prior_regularization:
+  kl_coef: 0.01                 # λ_KL
+  cfg_weight: 1.5               # w_m，所有激活模态同一个值
+  # 参考分布 = softmax( l_uncond + Σ_m w_m (l_m - l_uncond) )
+
+inference:
+  sampling_temperature: 0.05
+
+# 共用的正则项（三个任务都有）
+common_penalties:
+  action_rate:  -0.01
+  energy:       -0.0001
+  joint_limit:  -0.1
+  contact:      -0.1
+
+tasks:
+  scene_navigation:
+    goal_distance_m: [1.5, 3.0]
+    success_xy_threshold_m: 0.15
+    observation:
+      heightmap: { size: [16, 16], extent_m: 1.6, frame: heading }
+      target: { dims: 10, used: 2, frame: heading }   # 平面位移，补零到 10 维
+    reward_weights:
+      pos: 4.0
+      improve: 2.0
+      collision: -10.0
+      vel: -10.0
+      success: 50.0
+      failure: -50.0
+      still: 2.0
+
+  object_relocation:
+    goal_distance_m: [1.0, 2.0]
+    success_xy_threshold_m: 0.15
+    success_termination: { threshold_3d_m: 0.15, hold_s: 2.5 }   # 训练时的终止条件
+    observation:
+      heightmap: { size: [16, 16], extent_m: 1.6, frame: heading }
+      target: { dims: 10, used: 3, frame: heading }   # 物体目标的 3-D 位置，不裁剪
+      interaction_geometry_dim: 96
+      bps_dim: 512
+      clip_text: { dim: 512, optional: true, model: openclip_vit_b32, normalize: true }
+      text_prompts: [push, lift_and_move, pull, kick]  # 每个环境随机抽一个
+    reward_weights:
+      target: 4.0
+      improve: 2.0
+      success: 20.0
+      failure: -10.0
+
+  compositional:
+    # 脚本状态机：导航成功后切到搬运。两阶段控制都来自同一个任务策略。
+    phases: [scene_navigation, object_relocation]
+    navigation_phase:
+      target: object_xy_position
+      displacement_clip_m: 4.0
+      masked_modalities: [interaction_geometry, bps, text]
+    success: both_phases_completed
+
+termination:
+  fall_base_height_m: 0.2
+
+metrics:
+  collision_contact_force_N: 1.0   # 非足部 link 接触力 > 1 N 记为碰撞帧

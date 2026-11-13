@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "chip-repro"
+version = "0.0.1"
+description = "Reproduction of CHIP: Context-conditioned Humanoid Interaction Prior (SIGGRAPH Asia 2026)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+
+# 纯 Python 依赖。IsaacLab / Isaac Sim / torch 不写在这里：
+# 它们由 IsaacLab 的安装脚本在 GPU 机器上单独安装，版本要和 Isaac Sim 匹配。
+dependencies = [
+    "numpy>=1.24",
+    "pyyaml>=6.0",
+    "omegaconf>=2.3",
+    "tqdm>=4.65",
+    "scipy>=1.10",
+    "trimesh>=4.0",        # 读场景 / 物体网格，算高度图和 BPS
+    "smplx>=0.1.28",       # 读 TRUMANS / OMOMO 的 SMPL-X 动作
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "ruff>=0.4",
+]
+# 在 GPU 机器上按 docs/setup_gpu_machine.md 装 IsaacLab 之后，再装这组
+train = [
+    "tensorboard>=2.14",
+    "wandb>=0.16",
+]
+
+[tool.setuptools.packages.find]
+include = ["chip*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

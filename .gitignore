@@ -1,0 +1,47 @@
+# 数据集和论文 PDF：太大，且有使用条款，不进 git
+data/
+datasets/
+docs/paper/
+*.npz
+*.npy
+*.pkl
+*.h5
+
+# 训练产物
+runs/
+logs/
+checkpoints/
+outputs/
+wandb/
+*.pt
+*.pth
+*.ckpt
+*.onnx
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# 虚拟环境
+.venv/
+venv/
+env/
+conda-env/
+
+# IsaacLab / Isaac Sim 缓存
+.isaac-sim/
+*.usd.cache
+kit/
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+.DS_Store
+*.swp
