@@ -45,3 +45,8 @@ kit/
 .idea/
 .DS_Store
 *.swp
+
+# 安装包和其它大文件
+Miniconda3-*.sh
+*.tar.gz
+*.zip
