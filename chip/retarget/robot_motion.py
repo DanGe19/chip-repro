@@ -148,13 +148,19 @@ def robot_motion_from_gmr(gmr: dict, clip_meta: dict, objects: list[ObjectTrack]
     root_rot /= np.linalg.norm(root_rot, axis=1, keepdims=True)
     T = root_rot.shape[0]
 
+    def _cut_scale(scale, T0, n):
+        # 只有逐帧的缩放 (T,) / (T,3) 才需要裁剪；(1,) 和 (3,) 是全局的
+        per_frame = scale.ndim == 2 or (scale.ndim == 1 and scale.shape[0] == T0 and T0 > 3)
+        return scale[:n] if per_frame else scale
+
     objs = []
     for o in objects or []:
         # 重定向可能丢帧（GMR 偶尔跳过失败帧），按长度对齐
-        n = min(T, o.pose.shape[0])
+        T0 = o.pose.shape[0]
+        n = min(T, T0)
         objs.append(ObjectTrack(
             name=o.name, mesh_path=o.mesh_path,
-            pose=o.pose[:n], scale=o.scale[:n] if o.scale.shape[0] > 1 else o.scale,
+            pose=o.pose[:n], scale=_cut_scale(o.scale, T0, n),
             active=o.active[:n],
         ))
     if objs and any(o.pose.shape[0] != T for o in objs):
@@ -172,7 +178,7 @@ def robot_motion_from_gmr(gmr: dict, clip_meta: dict, objects: list[ObjectTrack]
         body_names=tuple(gmr["link_body_list"]) if gmr.get("link_body_list") else None,
         scene_name=clip_meta.get("scene_name"),
         scene_mesh_path=clip_meta.get("scene_mesh_path"),
-        objects=[ObjectTrack(o.name, o.mesh_path, o.pose[:T], o.scale[:T] if o.scale.shape[0] > 1 else o.scale, o.active[:T]) for o in objs],
+        objects=[ObjectTrack(o.name, o.mesh_path, o.pose[:T], _cut_scale(o.scale, o.pose.shape[0], T), o.active[:T]) for o in objs],
         text=clip_meta.get("text"),
         bad_frames=np.asarray([b for b in (bad_frames if bad_frames is not None else []) if b < T], dtype=np.int64),
     )

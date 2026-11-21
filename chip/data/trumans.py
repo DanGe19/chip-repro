@@ -28,6 +28,7 @@ TRUMANS 原始格式（来自官方仓库 README）：所有动作片段按帧�
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 from typing import Callable, Iterator, Optional
 
@@ -81,6 +82,21 @@ def _segment_ranges(seg_name: np.ndarray) -> list[tuple[str, int, int]]:
     starts = np.concatenate([[0], change])
     ends = np.concatenate([change, [n]])
     return [(str(seg_name[s]), int(s), int(e)) for s, e in zip(starts, ends)]
+
+
+_NAME_SCALE_RE = re.compile(r"^(?P<name>.+?)\((?P<sx>[-\d.]+),(?P<sy>[-\d.]+),(?P<sz>[-\d.]+)\)$")
+
+
+def parse_object_entry(entry: str) -> tuple[str, np.ndarray]:
+    """object_list.npy 里的条目形如 'movable_chair_seat_01(0.87,1.23,1.17)'。
+
+    返回 (网格基名, 缩放 xyz)。没有括号的条目缩放为 1。
+    实测（2026-11）：网格文件在 Object_all/Object_mesh/<基名>.obj。
+    """
+    m = _NAME_SCALE_RE.match(entry.strip())
+    if m:
+        return m.group("name"), np.array([float(m.group("sx")), float(m.group("sy")), float(m.group("sz"))], np.float32)
+    return entry.strip(), np.ones(3, np.float32)
 
 
 def is_idle_segment(object_flag_seg: np.ndarray) -> bool:
@@ -170,13 +186,14 @@ def iter_trumans_clips(
             idx = np.clip(flags, 0, om.shape[1] - 1)
             pose[active] = om[np.arange(T)[active], idx[active]]
             pose = yup_to_zup_pose(pose)
-            obj_name = object_list[col] if col < len(object_list) else f"obj{col}"
+            entry = object_list[col] if col < len(object_list) else f"obj{col}"
+            base_name, scale_xyz = parse_object_entry(entry)
             objects.append(
                 ObjectTrack(
-                    name=obj_name,
-                    mesh_path=f"Object_all/Object_mesh/{obj_name}.obj",
+                    name=entry,                                   # 保留完整条目，含缩放，保证唯一
+                    mesh_path=f"Object_all/Object_mesh/{base_name}.obj",
                     pose=pose,
-                    scale=np.ones(1, dtype=np.float32),
+                    scale=scale_xyz,                              # (3,) 各轴缩放
                     active=active,
                 )
             )

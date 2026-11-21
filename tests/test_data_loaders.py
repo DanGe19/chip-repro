@@ -11,6 +11,7 @@ from chip.data.trumans import (
     YUP_TO_ZUP,
     is_idle_segment,
     iter_trumans_clips,
+    parse_object_entry,
     sanity_check as trumans_check,
     yup_to_zup_axis_angle,
     yup_to_zup_points,
@@ -164,3 +165,11 @@ def test_is_idle_segment():
     assert is_idle_segment(-np.ones((10, 35)))
     f = -np.ones((10, 35)); f[3, 0] = 1
     assert not is_idle_segment(f)
+
+
+def test_parse_object_entry():
+    name, scale = parse_object_entry("movable_chair_seat_01(0.87,1.23,1.17)")
+    assert name == "movable_chair_seat_01"
+    assert np.allclose(scale, [0.87, 1.23, 1.17])
+    name2, scale2 = parse_object_entry("bottle_03")
+    assert name2 == "bottle_03" and np.allclose(scale2, 1.0)

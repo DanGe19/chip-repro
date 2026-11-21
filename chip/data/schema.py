@@ -28,7 +28,7 @@ class ObjectTrack:
     name: str                       # 物体名，例如 "plasticbox"
     mesh_path: str                  # OBJ 网格的路径（相对数据根目录）
     pose: np.ndarray                # (T, 4, 4) 世界坐标系下的齐次变换
-    scale: np.ndarray               # (T,) 或 (1,)，网格缩放；OMOMO 有逐帧缩放
+    scale: np.ndarray               # (1,) 统一缩放 | (3,) 各轴缩放 | (T,) 逐帧统一 | (T,3) 逐帧各轴
     active: np.ndarray              # (T,) bool，该帧物体是否参与交互（论文的 m_{o,t}）
 
 
@@ -91,7 +91,7 @@ class MotionClip:
         for o in self.objects:
             assert o.pose.shape == (T, 4, 4), (o.name, o.pose.shape)
             assert o.active.shape == (T,), (o.name, o.active.shape)
-            assert o.scale.shape in ((T,), (1,)), (o.name, o.scale.shape)
+            assert o.scale.shape in ((T,), (1,), (3,), (T, 3)), (o.name, o.scale.shape)
         if self.bad_frames.size:
             assert self.bad_frames.min() >= 0 and self.bad_frames.max() < T
 
