@@ -32,6 +32,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import numpy as np
+
 from chip.data.schema import MotionClip
 
 from .export_smplx import export_clips_for_gmr
@@ -84,6 +86,9 @@ def collect_outputs(manifest: list[dict], gmr_out: Path, out_dir: Path) -> list[
             },
             objects=clip.objects,
             bad_frames=clip.bad_frames,
+            # GMR 用 1.66 + 0.1*betas[0] 估身高（utils/smpl.py），这里必须用同一个公式
+            human_transl=clip.transl,
+            human_height=1.66 + 0.1 * float(np.asarray(clip.betas).ravel()[0]),
         )
         rel = Path(clip.clip_id + ".npz")
         rm.save(out_dir / rel)

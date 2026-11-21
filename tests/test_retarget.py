@@ -132,3 +132,39 @@ def test_run_gmr_skip_mode_end_to_end(tmp_path):
     assert (out / "omomo" / "seq_0.npz").exists()
     assert not (out / "omomo" / "seq_1.npz").exists()
     assert "seq_0" in (out / "index.csv").read_text()
+
+
+def test_gmr_world_transform_moves_objects_with_robot(tmp_path):
+    """GMR 把人缩放+起点归零；物体必须跟着变，否则手和物体相距 1 m（真实数据里踩过的坑）。"""
+    from chip.retarget.robot_motion import fit_gmr_world_transform, gmr_human_scale
+
+    T = 60
+    clip = make_clip(T=T)
+    height = 1.66 + 0.1 * float(clip.betas[0])
+    s = gmr_human_scale(height)
+    # 伪造一个"GMR 输出"：根 = s * transl 起点归零，再加点噪声
+    root = s * clip.transl[:, :2]
+    root = root - root[0]
+    rng = np.random.default_rng(3)
+    root = root + rng.normal(scale=0.01, size=root.shape)
+    pkl = tmp_path / "x.pkl"
+    make_fake_gmr_pickle(pkl, T)
+    gmr = load_gmr_pickle(pkl)
+    gmr["root_pos"] = np.concatenate([root, np.full((T, 1), 0.75)], axis=1)
+
+    s_fit, c, resid = fit_gmr_world_transform(gmr["root_pos"], clip.transl, height)
+    assert abs(s_fit - s) < 1e-6 and resid < 0.03
+
+    rm = robot_motion_from_gmr(gmr, {"clip_id": clip.clip_id, "source": "omomo"},
+                               objects=clip.objects, human_transl=clip.transl, human_height=height)
+    # 人类世界里 物体-根 的距离，乘以 s 后应等于机器人世界里 物体-根 的距离（只看 XY）
+    d_h = np.linalg.norm(clip.objects[0].pose[:, :2, 3] - clip.transl[:, :2], axis=1)
+    d_r = np.linalg.norm(rm.objects[0].pose[:, :2, 3] - rm.root_pos[:, :2], axis=1)
+    assert np.allclose(d_r, s * d_h, atol=0.05)
+    assert np.allclose(rm.objects[0].scale, s)
+    assert rm.world_scale == pytest.approx(s)
+
+    # 存取后变换信息还在
+    rm.save(tmp_path / "rm.npz")
+    rm2 = RobotMotion.load(tmp_path / "rm.npz")
+    assert rm2.world_scale == pytest.approx(s) and np.allclose(rm2.world_offset, c)

@@ -55,6 +55,8 @@ def _load_motion(path: Path):
     rm = RobotMotion.load(path)
     objects = [(o.name, np.asarray(o.pose, dtype=np.float64)) for o in rm.objects]
     meta = {"source": rm.source, "clip_id": rm.clip_id}
+    print(f"世界变换: scale {rm.world_scale:.3f}, offset {np.round(rm.world_offset, 3).tolist()}"
+          + ("  ← 未套 GMR 变换，物体会对不上" if rm.world_scale == 1.0 and rm.objects else ""))
     return float(rm.fps), rm.root_pos.astype(np.float64), rm.root_rot.astype(np.float64), rm.dof_pos.astype(np.float64), objects, meta
 
 
