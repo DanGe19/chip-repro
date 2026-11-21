@@ -47,20 +47,29 @@ Pods → Templates → New Template：
 | Container Image | `nvcr.io/nvidia/isaac-lab:2.3.0` |
 | Container Registry Credentials | 选 `ngc` |
 | Container Disk | 60 GB（镜像本身约 20 GB，shader 缓存要空间） |
-| Volume Disk | 150 GB |
-| Volume Mount Path | `/workspace` |
+| Persistent storage | 不在模板里设，部署时挂 Network volume（见第 3 步） |
+| Volume Mount Path | `/data`（**不能用 /workspace**，会盖掉镜像里的 IsaacLab） |
 | Expose TCP Ports | `22` |
-| Docker Command | `bash -c "sleep infinity"` |
+| Container start command | `{"entrypoint": ["/bin/bash", "-c"], "cmd": ["sleep infinity"]}` |
 | Environment Variables | `ACCEPT_EULA=Y`，`PRIVACY_CONSENT=Y` |
 
 说明：
 - 版本：2.3.0 是经过多人验证的稳定版，自带 G1 配置。3.0.0 刚发布，API 有变动，先不用。
-- `sleep infinity` 让容器启动后挂着不退出，我们 SSH 进去手动操作。
+- 启动命令**必须用 JSON 形式同时覆盖 entrypoint**。只写 `bash -c "sleep infinity"` 的话镜像自带的 entrypoint 会去启动 Isaac Sim 图形界面，没显示器就崩溃，容器每 35 秒重启一次。
+- 挂载路径用 `/data`。镜像把 IsaacLab 放在 `/workspace/isaaclab`，卷挂到 `/workspace` 会把它整个盖住（`ls /workspace/isaaclab` 变成空目录）。
 - 两个环境变量是接受 Isaac Sim 的许可，不设会在启动时卡住。
 
 ---
 
-## 第 3 步：启动第一个 Pod（Secure Cloud，按需）
+## 第 3 步：建 Network volume，再启动 Pod
+
+先建卷：Storage → Create volume → Network volume → 选数据中心 → 名字 `chip-data`，100 GB。
+选数据中心前先点右侧可用性表里的 GPU 型号看哪里有货。2026-11 实测：RTX 4090 在美国机房基本没货，
+**A40 在 CA-MTL-1 是 High**（$0.59/h，48 GB），我们用的是它。注意 CA-MTL-1 只有高性能盘，$0.14/GB/月。
+
+然后从卷的页面点 **Configure Pod with volume** 部署，卷会自动挂到模板里设的 `/data`。
+
+### 启动 Pod（Secure Cloud，按需）
 
 Pods → Deploy：
 1. 选 **Secure Cloud**（不是 Community）。
@@ -69,10 +78,11 @@ Pods → Deploy：
 4. Pricing 选 **On-Demand**（第一次不要选 Spot）。
 5. Deploy。等状态变成 Running（第一次拉镜像要 5–10 分钟）。
 
-连接：Pod 卡片 → Connect → 复制 SSH 命令，形如
+连接：Pod 卡片 → Connect → 用 **第一条**（走 ssh.runpod.io 代理的）：
 ```bash
-ssh root@<ip> -p <port> -i ~/.ssh/id_ed25519
+ssh <podid>-<hash>@ssh.runpod.io -i ~/.ssh/id_ed25519
 ```
+第二条"SSH over exposed TCP"连不上，因为 IsaacLab 镜像里没装 sshd。以后要传文件再在启动命令里加 sshd。
 
 ---
 
@@ -97,8 +107,8 @@ cd /workspace/isaaclab            # 镜像里 IsaacLab 在这里
 ## 第 5 步：装我们的仓库
 
 ```bash
-cd /workspace
-git clone https://github.com/DanGe19/chip-repro.git
+cd /data
+git clone https://github.com/DanGe19/chip-repro.git   # 仓库是公开的，不需要 token
 cd chip-repro
 # 用 IsaacLab 自带的 python，不要另建 conda 环境
 /workspace/isaaclab/isaaclab.sh -p -m pip install -e ".[dev,train]"
@@ -110,8 +120,8 @@ cd chip-repro
 ```bash
 cat >> ~/.bashrc <<'EOF'
 alias ilab='/workspace/isaaclab/isaaclab.sh -p'
-export CHIP_ROOT=/workspace/chip-repro
-export CHIP_DATA=/workspace/data
+export CHIP_ROOT=/data/chip-repro
+export CHIP_DATA=/data/datasets
 EOF
 source ~/.bashrc
 ```
@@ -120,9 +130,9 @@ source ~/.bashrc
 
 ## 第 6 步：数据和 checkpoint 的持久化
 
-### 数据下载（放在 `/workspace/data`，在 Volume Disk 上）
+### 数据下载（放在 `/data/datasets`，在 Network volume 上）
 ```bash
-mkdir -p /workspace/data && cd /workspace/data
+mkdir -p /data/datasets && cd /data/datasets
 pip install gdown
 # TRUMANS：从 Drive 文件夹下载（需要先在浏览器里用申请时的 Google 账号打开过一次）
 gdown --folder "https://drive.google.com/drive/folders/1CPw_cQcQAP_wbMuQ89rREQmMtEMd-2Hz" -O trumans
@@ -131,14 +141,14 @@ gdown --folder "https://drive.google.com/drive/folders/1CPw_cQcQAP_wbMuQ89rREQmM
 只下需要的：TRUMANS 的 `Scene_mesh/`、`Object_all/`、根目录的 `.npy`；`video_render/`、`Recordings_blend/` 不要。
 
 ### checkpoint 备份
-训练脚本会把 checkpoint 写到 `/workspace/runs/`。再开一个后台同步，每 10 分钟推一次到外部存储。
+训练脚本会把 checkpoint 写到 `/data/runs/`。再开一个后台同步，每 10 分钟推一次到外部存储。
 最省事的外部存储是 **Backblaze B2**（$6/TB/月，10 GB 以下免费）或 Cloudflare R2：
 ```bash
 pip install rclone  # 或 apt install rclone
 rclone config       # 配一个 remote，名字叫 backup
-nohup bash -c 'while true; do rclone sync /workspace/runs backup:chip-runs --exclude "*.tmp"; sleep 600; done' > /workspace/sync.log 2>&1 &
+nohup bash -c 'while true; do rclone sync /data/runs backup:chip-runs --exclude "*.tmp"; sleep 600; done' > /data/sync.log 2>&1 &
 ```
-被中断后在新 Pod 上 `rclone sync backup:chip-runs /workspace/runs` 拉回来，接着训。
+被中断后在新 Pod 上 `rclone sync backup:chip-runs /data/runs` 拉回来，接着训。
 
 ---
 
@@ -152,6 +162,11 @@ nohup bash -c 'while true; do rclone sync /workspace/runs backup:chip-runs --exc
 被中断时 Pod 会变成 Stopped。等几分钟点 Start 试试，那台机器有空闲 GPU 就能恢复，恢复不了就按第 2 条重新部署一个。
 
 ---
+
+## 实测性能（2026-11-21，A40）
+
+`Isaac-Velocity-Flat-G1-v0`，1024 环境：**约 13,400 steps/s**。按 4096 环境估 3–4 万 steps/s，
+Stage I 一个专家（约 10 亿步）8–10 小时。
 
 ## 省钱习惯
 
@@ -169,4 +184,7 @@ nohup bash -c 'while true; do rclone sync /workspace/runs backup:chip-runs --exc
 | `CUDA out of memory` | `--num_envs` 减半 |
 | 第一次运行很慢 | 编译 shader，等 |
 | 训练完有残留进程 | `pkill -9 -f python` 再启动 |
-| Pod 恢复后数据没了 | 数据放在了 Container Disk 而不是 `/workspace` |
+| Pod 恢复后数据没了 | 数据放在了 Container Disk 而不是 `/data` |
+| 容器每 35 秒重启 | 启动命令没覆盖 entrypoint，见第 2 步 |
+| `/workspace/isaaclab` 是空的 | 卷挂到了 `/workspace`，改成 `/data` |
+| 直连 SSH `Connection refused` | 镜像没有 sshd，用 ssh.runpod.io 代理那条 |
