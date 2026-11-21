@@ -71,7 +71,16 @@ def make_fake_trumans(root: Path):
     object_flag[s:s + 50, 3] = 1                       # 第 3 个物体，用 object_mat[:, 1]
     object_mat[s:s + 50, 1, :3, 3] = [0.3, 0.7, 0.2]   # Y 朝上，物体高 0.7
 
+    # 动作标签 (N,10)：seg_obj 的后半段标成"正在用手机"；人体关节 (N,24,3)，Y 朝上，站着（骨盆比脚高 0.9）
+    action = np.zeros((N, 10), np.float64)
+    action[s + 25:s + 50, 5] = 1.0
+    joints = np.zeros((N, 24, 3), np.float32)
+    joints[:, 0, 1] = 0.9
+    joints[100:110, 0, 1] = 0.4                        # seg_obj 末尾 10 帧"坐下"
+
     root.mkdir(parents=True)
+    np.save(root / "action_label.npy", action)
+    np.save(root / "human_joints.npy", joints)
     np.save(root / "seg_name.npy", seg_name)
     np.save(root / "frame_id.npy", frame_id)
     np.save(root / "human_transl.npy", transl)
@@ -105,7 +114,7 @@ def test_omomo_loader_filters_to_paper_objects(tmp_path):
 
 def test_trumans_idle_filter_and_axis_conversion(tmp_path):
     make_fake_trumans(tmp_path / "trumans")
-    clips = list(iter_trumans_clips(tmp_path / "trumans"))
+    clips = list(iter_trumans_clips(tmp_path / "trumans", mode="segments", subset_filter=is_idle_segment, min_frames=30))
     assert [c.clip_id for c in clips] == ["trumans/seg_idle"]   # 有物体的和太短的被过滤
     c = clips[0]
     assert c.num_frames == 60
@@ -118,7 +127,7 @@ def test_trumans_idle_filter_and_axis_conversion(tmp_path):
 
 def test_trumans_all_segments_keeps_object(tmp_path):
     make_fake_trumans(tmp_path / "trumans")
-    clips = {c.clip_id: c for c in iter_trumans_clips(tmp_path / "trumans", subset_filter=None)}
+    clips = {c.clip_id: c for c in iter_trumans_clips(tmp_path / "trumans", mode="segments", subset_filter=None, min_frames=30)}
     c = clips["trumans/seg_obj"]
     assert len(c.objects) == 1 and c.objects[0].name == "obj3"
     assert c.objects[0].active.all()
@@ -153,10 +162,11 @@ def test_build_index_cli(tmp_path):
     make_fake_omomo(tmp_path / "omomo")
     make_fake_trumans(tmp_path / "trumans")
     out = tmp_path / "clips"
-    main(["--omomo", str(tmp_path / "omomo"), "--trumans", str(tmp_path / "trumans"), "--out", str(out)])
+    main(["--omomo", str(tmp_path / "omomo"), "--trumans", str(tmp_path / "trumans"), "--out", str(out),
+          "--trumans-min-frames", "20"])
     assert (out / "index.csv").exists()
     assert (out / "omomo" / "sub16_plasticbox_000.npz").exists()
-    assert (out / "trumans" / "seg_idle.npz").exists()
+    assert (out / "trumans" / "seg_idle@000000.npz").exists()
     stats = (out / "index_stats.txt").read_text()
     assert "omomo" in stats and "trumans" in stats
 
@@ -173,3 +183,23 @@ def test_parse_object_entry():
     assert np.allclose(scale, [0.87, 1.23, 1.17])
     name2, scale2 = parse_object_entry("bottle_03")
     assert name2 == "bottle_03" and np.allclose(scale2, 1.0)
+
+
+def test_trumans_idle_runs_mode(tmp_path):
+    """默认模式：seg_idle 整段 60 帧是一段；seg_obj 前 25 帧无标签且站立是一段，
+    25–50 帧有动作标签被排除，剩下 0 帧...; seg_short 只有 10 帧不够 min_frames。"""
+    make_fake_trumans(tmp_path / "trumans")
+    clips = list(iter_trumans_clips(tmp_path / "trumans", mode="idle_runs", min_frames=20))
+    ids = [c.clip_id for c in clips]
+    assert "trumans/seg_idle@000000" in ids
+    assert "trumans/seg_obj@000000" in ids           # 前 25 帧
+    lens = {c.clip_id: c.num_frames for c in clips}
+    assert lens["trumans/seg_idle@000000"] == 60 and lens["trumans/seg_obj@000000"] == 25
+    assert all("seg_short" not in i for i in ids)
+
+
+def test_trumans_idle_runs_max_hours(tmp_path):
+    make_fake_trumans(tmp_path / "trumans")
+    # 预算只够 ~1 秒（30 帧）：只能装下 seg_obj 的 25 帧那段，装不下 60 帧的
+    clips = list(iter_trumans_clips(tmp_path / "trumans", mode="idle_runs", min_frames=20, max_hours=30 / 30 / 3600))
+    assert sum(c.num_frames for c in clips) <= 30

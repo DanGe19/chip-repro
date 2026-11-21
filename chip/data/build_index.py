@@ -64,7 +64,11 @@ def main(argv=None):
     ap.add_argument("--omomo", type=Path, help="OMOMO 的 data/ 目录")
     ap.add_argument("--omomo-split", default="train", choices=["train", "test"])
     ap.add_argument("--trumans", type=Path, help="TRUMANS 的 Data_release/ 目录")
-    ap.add_argument("--trumans-all", action="store_true", help="不做 idle 筛选，保留全部 TRUMANS 片段")
+    ap.add_argument("--trumans-mode", default="idle_runs", choices=["idle_runs", "segments"],
+                    help="idle_runs: 无动作标签且站立的连续帧段（默认）；segments: 整个录制片段")
+    ap.add_argument("--trumans-max-hours", type=float, default=None,
+                    help="idle_runs 模式下随机抽样到约 N 小时（论文 8.71）；默认全部")
+    ap.add_argument("--trumans-min-frames", type=int, default=90)
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--limit", type=int, default=None, help="每个数据集最多处理几条（调试用）")
     args = ap.parse_args(argv)
@@ -87,9 +91,10 @@ def main(argv=None):
         write_clips(limited(iter_omomo_clips(args.omomo, split=args.omomo_split)), args.out, rows)
 
     if args.trumans:
-        from .trumans import is_idle_segment, iter_trumans_clips
-        flt = None if args.trumans_all else is_idle_segment
-        write_clips(limited(iter_trumans_clips(args.trumans, subset_filter=flt)), args.out, rows)
+        from .trumans import iter_trumans_clips
+        write_clips(limited(iter_trumans_clips(
+            args.trumans, mode=args.trumans_mode, min_frames=args.trumans_min_frames,
+            max_hours=args.trumans_max_hours)), args.out, rows)
 
     write_index(rows, args.out)
 

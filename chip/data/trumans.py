@@ -99,6 +99,47 @@ def parse_object_entry(entry: str) -> tuple[str, np.ndarray]:
     return entry.strip(), np.ones(3, np.float32)
 
 
+IDLE_RULE_NOTE = """
+论文附录 A 的 "TRUMANS idle 子集"（1486 条 / 8.71 h）没有给出定义。我们在真实数据上试过 5 种规则，
+没有一种能同时对上条数和时长（整段无物体 303/4.8h；逐帧无动作标签 ~4800/29h；加站立 ~5000/27h；
+加移动 ~9700/10.5h 但全是碎片；动作标注区间的空档 ~1300/2.8h）。因此采用下面这个物理含义最清楚的规则，
+并提供 max_hours 抽样以对齐论文的数据规模。已向作者询问原始定义。
+规则：action_label 10 类全为 0（没在操作任何物体） 且 骨盆到较低脚高度差 > standing_thr（站立/行走，
+排除坐、躺、蹲） 的连续帧段，长度 ≥ min_frames。
+"""
+
+
+def idle_runs(root: Path, segments: list[tuple[str, int, int]], min_frames: int = 90,
+              standing_thr: float = 0.7, max_hours: Optional[float] = None, seed: int = 0,
+              fps: float = TRUMANS_FPS) -> list[tuple[str, int, int]]:
+    """按 IDLE_RULE_NOTE 的规则，返回 [(seg_name, global_start, global_end), ...]。"""
+    action = np.load(root / "action_label.npy", mmap_mode="r")        # (N, 10)
+    joints = np.load(root / "human_joints.npy", mmap_mode="r")        # (N, 24, 3)，Y 朝上
+    out = []
+    for name, s, e in segments:
+        a = np.asarray(action[s:e])
+        j = np.asarray(joints[s:e])
+        idle = a.sum(1) == 0
+        standing = (j[:, 0, 1] - np.minimum(j[:, 10, 1], j[:, 11, 1])) > standing_thr
+        m = idle & standing
+        d = np.diff(np.r_[0, m.astype(np.int8), 0])
+        for rs, re_ in zip(np.nonzero(d == 1)[0], np.nonzero(d == -1)[0]):
+            if re_ - rs >= min_frames:
+                out.append((name, s + int(rs), s + int(re_)))
+    if max_hours is not None:
+        rng = np.random.default_rng(seed)
+        order = rng.permutation(len(out))
+        budget = max_hours * 3600 * fps
+        picked, acc = [], 0
+        for i in order:
+            L = out[i][2] - out[i][1]
+            if acc + L > budget:
+                continue
+            picked.append(out[i]); acc += L
+        out = sorted(picked, key=lambda r: (r[0], r[1]))
+    return out
+
+
 def is_idle_segment(object_flag_seg: np.ndarray) -> bool:
     """默认的 idle 规则：整段没有任何物体。"""
     return bool(np.all(object_flag_seg < 0))
@@ -110,18 +151,28 @@ def is_idle_segment(object_flag_seg: np.ndarray) -> bool:
 
 def iter_trumans_clips(
     data_root: str | Path,
-    subset_filter: Optional[Callable[[np.ndarray], bool]] = is_idle_segment,
-    min_frames: int = 30,
+    mode: str = "idle_runs",
+    subset_filter: Optional[Callable[[np.ndarray], bool]] = None,
+    min_frames: int = 90,
+    standing_thr: float = 0.7,
+    max_hours: Optional[float] = None,
+    seed: int = 0,
     load_hands: bool = True,
     drop_bad_segments: bool = False,
 ) -> Iterator[MotionClip]:
     """逐条产出 TRUMANS 片段。
 
+    两种模式：
+    - "idle_runs"（默认）：我们对论文 "idle 子集" 的定义（见 IDLE_RULE_NOTE）。在每个录制片段内，
+      取「无交互动作标签 且 站立」的连续帧段，长度 ≥ min_frames，每段一条 clip。
+    - "segments"：整个录制片段为一条 clip，可用 subset_filter(object_flag) 筛选。
+
     Args:
         data_root: Data_release/ 目录。
-        subset_filter: 接收该片段的 object_flag (T, 35)，返回是否保留。
-            默认只保留 idle（无物体）片段。传 None 保留全部。
-        min_frames: 太短的片段跳过。
+        min_frames: 短于此的片段/帧段跳过。
+        standing_thr: 骨盆到较低脚的高度差阈值（m），区分站立/行走与坐/躺。
+        max_hours: idle_runs 模式下，按 seed 随机抽样到约这么多小时（对齐论文的 8.71 h）。None 表示全部。
+        subset_filter: segments 模式下，接收该片段的 object_flag (T, 35)，返回是否保留。
         load_hands: 是否读手部姿态。
         drop_bad_segments: True 则含 bad_frames 的片段整条丢掉；False 则保留并记录 bad_frames。
     """
@@ -154,18 +205,30 @@ def iter_trumans_clips(
     )
     bad_set = set(bad_frames_all.tolist())
 
-    action_texts = _load_action_texts(root / "Action")
+    action_texts = _load_action_texts(root / "Actions") or _load_action_texts(root / "Action")
+
+    segments = _segment_ranges(seg_name)
+    seg_start = {n: s0 for n, s0, _ in segments}
+    if mode == "idle_runs":
+        ranges = idle_runs(root, segments, min_frames=min_frames, standing_thr=standing_thr,
+                           max_hours=max_hours, seed=seed)
+    elif mode == "segments":
+        ranges = []
+        for name, s, e in segments:
+            if e - s < min_frames:
+                continue
+            if subset_filter is not None and not subset_filter(np.asarray(object_flag[s:e])):
+                continue
+            ranges.append((name, s, e))
+    else:
+        raise ValueError(f"未知 mode: {mode!r}")
+    log.info("TRUMANS mode=%s: %d 个录制片段 → %d 条候选 clip", mode, len(segments), len(ranges))
 
     n_total, n_kept = 0, 0
-    for name, s, e in _segment_ranges(seg_name):
+    for name, s, e in ranges:
         n_total += 1
         T = e - s
-        if T < min_frames:
-            continue
-
         of = np.asarray(object_flag[s:e])
-        if subset_filter is not None and not subset_filter(of):
-            continue
 
         bad_local = np.array(sorted(f - s for f in range(s, e) if f in bad_set), dtype=np.int64)
         if drop_bad_segments and bad_local.size:
@@ -199,7 +262,7 @@ def iter_trumans_clips(
             )
 
         clip = MotionClip(
-            clip_id=f"trumans/{name}",
+            clip_id=f"trumans/{name}" if mode == "segments" else f"trumans/{name}@{s - seg_start[name]:06d}",
             source="trumans",
             fps=TRUMANS_FPS,
             transl=yup_to_zup_points(np.asarray(human_transl[s:e], dtype=np.float32)),
@@ -235,16 +298,25 @@ def _segment_betas(betas_all, start: int) -> np.ndarray:
 
 
 def _load_action_texts(action_dir: Path) -> dict[str, str]:
-    """Action/ 目录下每个片段一个文本文件。格式未确认，按"文件名=片段名、内容=描述"读。"""
+    """Actions/ 下每个片段一个 txt，每行 "起始帧\t结束帧\t描述"（实测 2026-11）。
+    这里把描述去重后用 "; " 连起来作为整段的文本；逐区间信息暂不使用。"""
     if not action_dir.exists():
         return {}
     out = {}
     for p in sorted(action_dir.iterdir()):
-        if p.is_file():
-            try:
-                out[p.stem] = p.read_text(encoding="utf-8", errors="ignore").strip()
-            except OSError:
-                pass
+        if not p.is_file():
+            continue
+        descs = []
+        try:
+            for line in p.read_text(encoding="utf-8", errors="ignore").splitlines():
+                parts = line.rstrip("\n").split("\t")
+                d = parts[2].strip() if len(parts) >= 3 else line.strip()
+                if d and d not in descs:
+                    descs.append(d)
+        except OSError:
+            continue
+        if descs:
+            out[p.stem] = "; ".join(descs)
     return out
 
 
