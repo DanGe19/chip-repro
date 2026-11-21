@@ -121,3 +121,21 @@ def test_body_to_object_vectors_points_at_surface():
     v = body_to_object_vectors(body, box, pose)
     assert v.shape == (1, 3)
     assert np.allclose(v[0], [1.5, 0.0, 0.0], atol=1e-6)
+
+
+def test_joint_reorder_fill_missing():
+    from chip.envs.conversions import JointReorder
+    import numpy as np, pytest
+    src = ["a", "b", "c"]
+    dst = ["c", "hand_x", "a", "b"]
+    with pytest.raises(ValueError):
+        JointReorder(src, dst)
+    r = JointReorder(src, dst, fill_missing=0.0)
+    x = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
+    y = r(x)
+    assert y.shape == (2, 4)
+    assert np.allclose(y, [[3, 0, 1, 2], [6, 0, 4, 5]])
+    assert np.allclose(r.inverse(y), x)
+    # src 多出来的关节必须报错
+    with pytest.raises(ValueError):
+        JointReorder(src + ["zzz"], dst, fill_missing=0.0)

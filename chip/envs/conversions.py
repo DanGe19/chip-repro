@@ -55,18 +55,29 @@ class JointReorder:
         dof_gmr   = r.inverse(dof_isaac)
     """
 
-    def __init__(self, src_names, dst_names):
+    def __init__(self, src_names, dst_names, fill_missing: float | None = None):
+        """fill_missing=None 时两边名字必须完全一致；给一个数值时，dst 里 src 没有的关节
+        （比如 IsaacLab G1 资产上多出来的 14 个 Dex3 手指关节）用该值填充。src 多出来的关节始终报错。"""
         src_names, dst_names = list(src_names), list(dst_names)
         missing = [n for n in dst_names if n not in src_names]
         extra = [n for n in src_names if n not in dst_names]
-        if missing or extra:
+        if extra or (missing and fill_missing is None):
             raise ValueError(f"关节名对不上。dst 里 src 没有的: {missing}；src 里 dst 没有的: {extra}")
         self.src_names, self.dst_names = src_names, dst_names
-        self._fwd = np.array([src_names.index(n) for n in dst_names])   # dst[i] = src[fwd[i]]
+        self.missing_names = missing
+        self.fill_missing = fill_missing
+        # dst[i] = src[fwd[i]]；缺的关节 fwd[i] = -1
+        self._fwd = np.array([src_names.index(n) if n in src_names else -1 for n in dst_names])
         self._inv = np.array([dst_names.index(n) for n in src_names])
 
     def __call__(self, x: np.ndarray) -> np.ndarray:
-        return np.asarray(x)[..., self._fwd]
+        x = np.asarray(x)
+        if not self.missing_names:
+            return x[..., self._fwd]
+        out = np.full(x.shape[:-1] + (len(self.dst_names),), self.fill_missing, dtype=x.dtype)
+        has = self._fwd >= 0
+        out[..., has] = x[..., self._fwd[has]]
+        return out
 
     def inverse(self, x: np.ndarray) -> np.ndarray:
         return np.asarray(x)[..., self._inv]

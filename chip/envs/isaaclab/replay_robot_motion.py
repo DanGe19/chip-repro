@@ -85,7 +85,10 @@ def main():
     sim.reset()
     print("[replay] IsaacLab 关节顺序:", robot.joint_names)
     print("[replay] 刚体名:", robot.body_names)
-    reorder = JointReorder(list(rm.dof_names), list(robot.joint_names))
+    # IsaacLab 的 G1 资产可能带 Dex3 手（多 14 个手指关节），数据里没有的关节填 0
+    reorder = JointReorder(list(rm.dof_names), list(robot.joint_names), fill_missing=0.0)
+    if reorder.missing_names:
+        print(f"[replay] 资产多出 {len(reorder.missing_names)} 个关节（填 0）:", reorder.missing_names)
     device = sim.device
 
     # 根部朝向补偿：G1_29DOF_CFG 的 init rot 是绕 x 转 +90°，说明该 USD 资产本体是 Y 朝上。
