@@ -42,3 +42,12 @@
 
 第一个验收点：把一条 `RobotMotion` 在 IsaacLab 里**纯运动学回放**（直接设关节角，不开物理），
 肉眼看动作对不对、脚是否踩在地上、场景是否朝向正确。这一步不需要训练，环境搭好就能做。
+
+## 2026-11-21 回放验证结果（IsaacLab 2.3.0, G1_29DOF_CFG）
+
+- 资产 43 个关节 = 我们的 29 个 + 14 个 Dex3 手指；关节顺序按树交错（左右腿、腰、手臂混排），
+  必须按名字映射：`JointReorder(G1_DOF_NAMES, robot.joint_names, fill_missing=0.0)`。
+- 根部四元数直接用 GMR 的 (x,y,z,w)→(w,x,y,z) 即可，**不要**加 90° 补偿。
+- 同一片段的脚高：MuJoCo 0.014/0.009 m vs IsaacLab 0.021/0.025 m，一致。
+- RunPod 容器没有图形能力，`--enable_cameras` 会段错误；无头物理仿真正常。
+- `SimulationApp.close()` 在无头模式偶尔挂死，脚本里加了 20 s 看门狗强制退出。
