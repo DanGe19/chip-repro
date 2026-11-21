@@ -37,8 +37,12 @@ app_launcher = AppLauncher(args_cli)
 simulation_app = app_launcher.app
 
 # ---- 下面才能 import isaaclab 的其它模块 ----
+import functools  # noqa: E402
+
 import numpy as np  # noqa: E402
 import torch  # noqa: E402
+
+print = functools.partial(print, flush=True)  # noqa: A001  即时刷新，nohup 下也能看到进度
 
 import isaaclab.sim as sim_utils  # noqa: E402
 from isaaclab.assets import Articulation, AssetBaseCfg  # noqa: E402
@@ -155,5 +159,16 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
-    simulation_app.close()
+    import os
+    import threading
+
+    try:
+        main()
+    finally:
+        sys.stdout.flush()
+        sys.stderr.flush()
+        # Isaac Sim 无头模式下 close() 偶尔挂死（PhysX 在关闭后又初始化 CUDA）。
+        # 结果已经打印/写盘，20 秒关不掉就直接退出。
+        threading.Timer(20.0, lambda: os._exit(0)).start()
+        simulation_app.close()
+        os._exit(0)

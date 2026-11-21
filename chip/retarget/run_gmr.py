@@ -120,7 +120,7 @@ def main(argv=None):
     ap.add_argument("--gmr-root", type=Path, default=os.environ.get("GMR_ROOT"))
     ap.add_argument("--robot", default="unitree_g1")
     ap.add_argument("--sources", nargs="*", help="只处理这些来源，例如 omomo trumans")
-    ap.add_argument("--num-betas", type=int, default=None, help="强制 betas 长度（GMR 对 OMOMO 用 16）")
+    ap.add_argument("--num-betas", type=int, default=16, help="betas 补零/截断到这个长度。GitHub 版 smplx 的 SMPL-X 默认 16 个，GMR 按 16 设计；TRUMANS 只有 10 个，不补会 einsum 报错")
     ap.add_argument("--num-cpus", type=int, default=4)
     ap.add_argument("--python", help="GMR 环境的 python 解释器")
     ap.add_argument("--uv", action="store_true", help="用 `uv run` 跑 GMR 脚本")

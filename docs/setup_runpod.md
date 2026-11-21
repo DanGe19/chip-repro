@@ -171,6 +171,7 @@ nohup bash -c 'while true; do rclone sync /workspace/runs backup:chip-runs --exc
 | 训练完有残留进程 | `pkill -9 -f python` 再启动 |
 | Pod 恢复后数据没了 | 数据放在了 Container Disk 而不是 `/workspace` |
 | GMR 报 `Sizes of tensors must match ... Expected size N but got size 1` | IsaacLab 自带的 `smplx` 是 PyPI 旧版 0.1.28，多帧姿态时不会把默认 expression 扩展到每帧。换成 GitHub 版：`isaaclab.sh -p -m pip install --no-deps --force-reinstall git+https://github.com/vchoutas/smplx` |
+| GMR 报 `einsum(): subscript l has size 26 ... previously seen size 20` | 模型要 16 个 betas，数据只有 10 个（TRUMANS）。`run_gmr.py` 现在默认 `--num-betas 16` 补零 |
 | `/data/envs/gmr/bin/python` 里 `No module named numpy` | 那个 venv 是空壳。GMR 实际装在 IsaacLab 的 python 里，`run_gmr.py --python /workspace/isaaclab/_isaac_sim/python.sh` |
 
 ## GMR 在 Pod 上的实际布局（2026-11-21）
@@ -182,5 +183,7 @@ nohup bash -c 'while true; do rclone sync /workspace/runs backup:chip-runs --exc
 ```bash
 cd /data/chip-repro && /workspace/isaaclab/isaaclab.sh -p -m chip.retarget.run_gmr \
   --clips /data/clips --out /data/robot_clips --work /data/gmr_work \
-  --gmr-root /data/GMR --python /workspace/isaaclab/_isaac_sim/python.sh --num-cpus 8
+  --gmr-root /data/GMR --python /workspace/isaaclab/_isaac_sim/python.sh --num-cpus 7
 ```
+
+注意：`nproc` 显示 96 核是宿主机的，`cat /sys/fs/cgroup/cpu.max` 才是 Pod 的真实配额（A40 档约 7.65 核）。进程数超过配额只会更慢、更吃内存。后台任务用 `setsid nohup ... < /dev/null &`，SSH 掉线也不受影响。Isaac Sim 的 RTX 渲染（`--enable_cameras`）在 RunPod 容器里会段错误：容器没有 Vulkan/图形驱动能力（`NVIDIA_DRIVER_CAPABILITIES` 为空），物理仿真和训练不受影响。
