@@ -231,16 +231,18 @@ class G1ImitationEnv(DirectRLEnv):
     def _reset_idx(self, env_ids: torch.Tensor | None):
         if env_ids is None or len(env_ids) == self.num_envs:
             env_ids = self.robot._ALL_INDICES
+        # 日志：各奖励项的"每步平均值"，以及平均局长。必须在 super()._reset_idx 之前读局长（它会清零）
+        if self._episode_sums:
+            ep_len = torch.clamp(self.episode_length_buf[env_ids].float(), min=1)
+            self.extras.setdefault("log", {})
+            for k, v in self._episode_sums.items():
+                self.extras["log"][f"rew/{k}"] = (v[env_ids] / ep_len).mean()
+                v[env_ids] = 0.0
+            self.extras["log"]["episode/len_s"] = (ep_len * self.reward_cfg.dt).mean()
+
         self.robot.reset(env_ids)
         super()._reset_idx(env_ids)
         n = len(env_ids)
-
-        # 日志：各奖励项的 episode 均值
-        if self._episode_sums:
-            self.extras.setdefault("log", {})
-            for k, v in self._episode_sums.items():
-                self.extras["log"][f"rew/{k}"] = (v[env_ids] / torch.clamp(self.episode_length_buf[env_ids].float(), min=1)).mean()
-                v[env_ids] = 0.0
 
         clip = self.motion.sample_clips(n)
         t = self.motion.sample_times(clip, truncate=1.0)
