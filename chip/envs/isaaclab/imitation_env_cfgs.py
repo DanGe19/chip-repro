@@ -1,5 +1,6 @@
 """环境配置的几个变体。"""
 
+from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.utils import configclass
 
 from chip.envs.isaaclab import WALK_CLIP
@@ -10,7 +11,8 @@ from chip.envs.isaaclab.imitation_env import G1ImitationEnvCfg
 class G1ImitationWalkEnvCfg(G1ImitationEnvCfg):
     """调试/冒烟：只用一条走路片段，1024 个环境。"""
     motion_clip_ids = (WALK_CLIP,)
-    scene = G1ImitationEnvCfg.scene.replace(num_envs=1024)
+    # configclass 的字段要整个重新声明，不能 .replace() 父类的
+    scene: InteractiveSceneCfg = InteractiveSceneCfg(num_envs=1024, env_spacing=3.0, replicate_physics=True)
 
 
 @configclass
