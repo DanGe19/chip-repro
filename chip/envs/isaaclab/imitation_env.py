@@ -75,6 +75,7 @@ class G1ImitationEnvCfg(DirectRLEnvCfg):
     # ---- 奖励 / 终止 ----
     reward_cfg_path: str = str(Path(__file__).resolve().parents[3] / "configs" / "stage1_imitation.yaml")
     termination_pos_thr: float = 0.5
+    action_rate_scale: float = 1.0     # 乘到论文的 action_rate 惩罚上；前期可调小（课程），学会走路后再调回 1
     termination_height: float = 0.3
     early_termination: bool = True
     reset_time_mode: str = "random"    # "random" = RSI（训练）；"start" = 总从片段开头开始（评估/录像）
@@ -106,6 +107,8 @@ class G1ImitationEnv(DirectRLEnv):
 
         self.reward_cfg: RewardCfg = load_reward_cfg(cfg.reward_cfg_path)
         self.reward_cfg.dt = cfg.sim.dt * cfg.decimation
+        if "action_rate" in self.reward_cfg.penalties:
+            self.reward_cfg.penalties["action_rate"] *= cfg.action_rate_scale
 
         N = self.num_envs
         self.clip_idx = torch.zeros(N, dtype=torch.long, device=self.device)
