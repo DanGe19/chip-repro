@@ -1,4 +1,5 @@
 # 数据集和论文 PDF：太大，且有使用条款，不进 git
+# 注意要锚定到仓库根（前导 /），否则会把 chip/data/ 也忽略掉
 /data/
 /datasets/
 docs/paper/
@@ -46,7 +47,12 @@ kit/
 .DS_Store
 *.swp
 
-# 安装包和其它大文件
+# 本地渲染/视频产物
+/videos/
+/logs/
+
+# 安装包 / 压缩包（Miniconda 安装包 168 MB 曾两次被误提交）
 Miniconda3-*.sh
 *.tar.gz
 *.zip
+*.dmg
