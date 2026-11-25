@@ -54,10 +54,109 @@ def _load_motion(path: Path):
 
     rm = RobotMotion.load(path)
     objects = [(o.name, np.asarray(o.pose, dtype=np.float64)) for o in rm.objects]
-    meta = {"source": rm.source, "clip_id": rm.clip_id}
+    meta = {
+        "source": rm.source, "clip_id": rm.clip_id,
+        "object_tracks": list(rm.objects),
+        "scene_mesh_path": rm.scene_mesh_path,
+        "world_scale": float(rm.world_scale), "world_offset": np.asarray(rm.world_offset, dtype=np.float64),
+    }
     print(f"世界变换: scale {rm.world_scale:.3f}, offset {np.round(rm.world_offset, 3).tolist()}"
           + ("  ← 未套 GMR 变换，物体会对不上" if rm.world_scale == 1.0 and rm.objects else ""))
     return float(rm.fps), rm.root_pos.astype(np.float64), rm.root_rot.astype(np.float64), rm.dof_pos.astype(np.float64), objects, meta
+
+
+def _mat_to_quat_wxyz(R: np.ndarray) -> np.ndarray:
+    """旋转矩阵 (3,3) → 四元数 (w,x,y,z)。先正交化一下，数据里的矩阵可能带缩放/噪声。"""
+    U, _, Vt = np.linalg.svd(R)
+    R = U @ Vt
+    if np.linalg.det(R) < 0:
+        U[:, -1] *= -1
+        R = U @ Vt
+    q = np.empty(4)
+    tr = np.trace(R)
+    if tr > 0:
+        s = np.sqrt(tr + 1.0) * 2
+        q[:] = [0.25 * s, (R[2, 1] - R[1, 2]) / s, (R[0, 2] - R[2, 0]) / s, (R[1, 0] - R[0, 1]) / s]
+    else:
+        i = int(np.argmax(np.diag(R)))
+        j, k = (i + 1) % 3, (i + 2) % 3
+        s = np.sqrt(1.0 + R[i, i] - R[j, j] - R[k, k]) * 2
+        v = np.empty(3)
+        v[i] = 0.25 * s
+        v[j] = (R[j, i] + R[i, j]) / s
+        v[k] = (R[k, i] + R[i, k]) / s
+        q[:] = [(R[k, j] - R[j, k]) / s, *v]
+    return q / np.linalg.norm(q)
+
+
+def _resolve_mesh(mesh_path: str | None, source: str, data_roots: dict[str, Path]) -> Path | None:
+    if not mesh_path:
+        return None
+    p = Path(mesh_path)
+    if p.is_absolute() and p.exists():
+        return p
+    root = data_roots.get(source)
+    if root and (root / p).exists():
+        return root / p
+    return None
+
+
+def build_scene_model(robot_xml: Path, meta: dict, data_roots: dict[str, Path], with_scene: bool):
+    """用 MjSpec 把物体（和场景）加进 GMR 的 G1 模型。返回 (model, [(body_name, pose(T,4,4)), ...])。
+
+    物体做成 mocap 刚体（每帧直接写位姿，不参与物理）；网格缩放 = 数据里的 scale（已含 GMR 世界缩放）。
+    场景网格是人类世界坐标，加进来时按 world_scale/world_offset 变换。
+    """
+    import mujoco as mj
+
+    spec = mj.MjSpec.from_file(str(robot_xml))
+    tracks = []
+    palette = [(0.95, 0.55, 0.2, 1.0), (0.2, 0.6, 0.9, 1.0), (0.3, 0.8, 0.4, 1.0), (0.8, 0.3, 0.7, 1.0)]
+    for i, o in enumerate(meta.get("object_tracks", [])):
+        mesh_file = _resolve_mesh(o.mesh_path, meta["source"], data_roots)
+        if mesh_file is None:
+            print(f"[跳过物体 {o.name}] 找不到网格 {o.mesh_path}", file=sys.stderr)
+            continue
+        sc = np.asarray(o.scale, dtype=np.float64).reshape(-1)
+        sc3 = np.array([sc[0]] * 3) if sc.size in (1,) else (sc[:3] if sc.size == 3 else np.array([sc[0]] * 3))
+        if np.asarray(o.scale).ndim == 2:          # (T,3) 逐帧缩放：取第 0 帧
+            sc3 = np.asarray(o.scale, dtype=np.float64)[0]
+        name = f"obj_{i}_{o.name}"
+        spec.add_mesh(name=name, file=str(mesh_file), scale=sc3.tolist())
+        body = spec.worldbody.add_body(name=name, mocap=True)
+        g = body.add_geom(type=mj.mjtGeom.mjGEOM_MESH, meshname=name, rgba=palette[i % len(palette)],
+                          contype=0, conaffinity=0)
+        tracks.append((name, np.asarray(o.pose, dtype=np.float64)))
+    if with_scene and meta.get("scene_mesh_path"):
+        scene_file = _resolve_mesh(meta["scene_mesh_path"], meta["source"], data_roots)
+        if scene_file is None:
+            print(f"[跳过场景] 找不到 {meta['scene_mesh_path']}", file=sys.stderr)
+        else:
+            s = float(meta["world_scale"])
+            spec.add_mesh(name="scene", file=str(scene_file), scale=[s, s, s])
+            body = spec.worldbody.add_body(name="scene", pos=meta["world_offset"].tolist())
+            body.add_geom(type=mj.mjtGeom.mjGEOM_MESH, meshname="scene", rgba=(0.75, 0.75, 0.75, 1.0),
+                          contype=0, conaffinity=0)
+    try:
+        model = spec.compile()
+    except Exception as e:  # noqa: BLE001
+        print(f"[警告] 带物体/场景的模型编译失败，退回只画机器人: {e}", file=sys.stderr)
+        model = mj.MjModel.from_xml_path(str(robot_xml))
+        tracks = []
+    return model, tracks
+
+
+def _set_mocap(model, data, tracks, t):
+    import mujoco as mj
+
+    for name, pose in tracks:
+        bid = mj.mj_name2id(model, mj.mjtObj.mjOBJ_BODY, name)
+        mid = model.body_mocapid[bid]
+        if mid < 0:
+            continue
+        k = min(t, pose.shape[0] - 1)
+        data.mocap_pos[mid] = pose[k, :3, 3]
+        data.mocap_quat[mid] = _mat_to_quat_wxyz(pose[k, :3, :3])
 
 
 def _body_positions(model, data, root_pos, root_rot_xyzw, dof_pos, names):
@@ -122,7 +221,7 @@ def numeric_report(model, data, fps, root_pos, root_rot, dof_pos, objects) -> st
     return "\n".join(lines)
 
 
-def render(model, data, fps, root_pos, root_rot, dof_pos, out_stem: Path, width=640, height=480, max_frames=600):
+def render(model, data, fps, root_pos, root_rot, dof_pos, out_stem: Path, width=640, height=480, max_frames=600, tracks=()):
     import mujoco as mj
 
     T = root_pos.shape[0]
@@ -138,6 +237,7 @@ def render(model, data, fps, root_pos, root_rot, dof_pos, out_stem: Path, width=
         data.qpos[:3] = root_pos[t]
         data.qpos[3:7] = root_rot[t][[3, 0, 1, 2]]
         data.qpos[7:] = dof_pos[t]
+        _set_mocap(model, data, tracks, t)
         mj.mj_forward(model, data)
         cam.lookat[:] = [root_pos[t, 0], root_pos[t, 1], 0.6]
         renderer.update_scene(data, camera=cam)
@@ -181,17 +281,24 @@ def main(argv=None):
     ap.add_argument("--robot", default="unitree_g1")
     ap.add_argument("--out", type=Path, default=None, help="输出前缀（不带后缀）")
     ap.add_argument("--no-render", action="store_true")
+    ap.add_argument("--scene", action="store_true", help="TRUMANS 片段也把场景网格画进去（大网格会慢）")
+    ap.add_argument("--data-roots", nargs="*", default=["omomo=/data/datasets/omomo/data", "trumans=/data/datasets/trumans"],
+                    help="物体/场景网格的相对路径根目录，形如 source=/path")
+    ap.add_argument("--width", type=int, default=640)
+    ap.add_argument("--height", type=int, default=480)
     args = ap.parse_args(argv)
+    data_roots = {k: Path(v) for k, v in (kv.split("=", 1) for kv in args.data_roots)}
 
     sys.path.insert(0, str(args.gmr_root))
     import mujoco as mj
     from general_motion_retargeting import ROBOT_XML_DICT
 
-    model = mj.MjModel.from_xml_path(str(ROBOT_XML_DICT[args.robot]))
+    fps, root_pos, root_rot, dof_pos, objects, meta = _load_motion(args.motion)
+    model, tracks = build_scene_model(Path(ROBOT_XML_DICT[args.robot]), meta, data_roots, args.scene)
     data = mj.MjData(model)
-
-    fps, root_pos, root_rot, dof_pos, objects, _ = _load_motion(args.motion)
-    assert dof_pos.shape[1] == model.nq - 7, f"dof 数不匹配: {dof_pos.shape[1]} vs {model.nq - 7}"
+    if tracks:
+        print("画进视频的物体:", [n for n, _ in tracks])
+    assert dof_pos.shape[1] == model.nq - 7, f"dof 数不匹配: {dof_pos.shape[1]} vs {model.nq - 7}（mocap 刚体不占 qpos）"
 
     out = args.out or args.motion.with_suffix("")
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -199,7 +306,7 @@ def main(argv=None):
     print(report)
     out.with_name(out.name + "_report.txt").write_text(report + "\n", encoding="utf-8")
     if not args.no_render:
-        for p in render(model, data, fps, root_pos, root_rot, dof_pos, out):
+        for p in render(model, data, fps, root_pos, root_rot, dof_pos, out, width=args.width, height=args.height, tracks=tracks):
             print("已写出", p)
 
 

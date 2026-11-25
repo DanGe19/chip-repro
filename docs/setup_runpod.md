@@ -187,3 +187,12 @@ cd /data/chip-repro && /workspace/isaaclab/isaaclab.sh -p -m chip.retarget.run_g
 ```
 
 注意：`nproc` 显示 96 核是宿主机的，`cat /sys/fs/cgroup/cpu.max` 才是 Pod 的真实配额（A40 档约 7.65 核）。进程数超过配额只会更慢、更吃内存。后台任务用 `setsid nohup ... < /dev/null &`，SSH 掉线也不受影响。Isaac Sim 的 RTX 渲染（`--enable_cameras`）在 RunPod 容器里会段错误：容器没有 Vulkan/图形驱动能力（`NVIDIA_DRIVER_CAPABILITIES` 为空），物理仿真和训练不受影响。
+
+
+## 换机器 / 重建 Pod（2026-11-24）
+
+原 Pod `chip-dev` 所在物理机 GPU 报 `[GPU requires reset]`（RunPod 承认是硬件故障），无法再启动。
+网络盘 `chip-data` 上的东西（数据、重定向结果、GMR、代码）全部无损；容器盘里装的软件丢失。
+重建步骤：Storage 页 → chip-data → Deploy → 模板 `isaaclab-chip`、A40、名字 `chip-dev2` → 部署；
+进入后运行 `bash /data/chip-repro/scripts/pod_bootstrap.sh`（装 sshd、smplx、GMR，跑测试）。
+教训：**不要把任何需要保留的东西放在 /data 以外。**
