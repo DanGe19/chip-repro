@@ -77,6 +77,7 @@ class G1ImitationEnvCfg(DirectRLEnvCfg):
     termination_pos_thr: float = 0.5
     termination_height: float = 0.3
     early_termination: bool = True
+    reset_time_mode: str = "random"    # "random" = RSI（训练）；"start" = 总从片段开头开始（评估/录像）
 
 
 class G1ImitationEnv(DirectRLEnv):
@@ -245,7 +246,10 @@ class G1ImitationEnv(DirectRLEnv):
         n = len(env_ids)
 
         clip = self.motion.sample_clips(n)
-        t = self.motion.sample_times(clip, truncate=1.0)
+        if self.cfg.reset_time_mode == "start":
+            t = torch.zeros(n, device=self.device)
+        else:
+            t = self.motion.sample_times(clip, truncate=1.0)
         self.clip_idx[env_ids] = clip
         self.ref_time[env_ids] = t
         ref = self.motion.get_state(clip, t)
