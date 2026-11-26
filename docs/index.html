@@ -37,13 +37,6 @@
     Code: <a href="https://github.com/DanGe19/chip-repro">github.com/DanGe19/chip-repro</a>. Last updated: <span id="date">2026-11-26</span>.
   </p>
 
-  <h2>Status</h2>
-  <ul>
-    <li><b>Data pipeline done.</b> TRUMANS + OMOMO loaded into a common format (3,179 clips, 11.0 h), retargeted to G1 with GMR, verified in MuJoCo and by kinematic replay in IsaacLab.</li>
-    <li><b>Stage I running.</b> IsaacLab imitation environment (RSI resets, paper's tracking reward, kinematic termination) + PPO. First experiments on a single walking clip; see below.</li>
-    <li>Next: scale Stage I to all clips / per-expert groups, then Stage II (VQ-VAE + context prior).</li>
-  </ul>
-
   <h2>Data composition vs. the paper</h2>
   <p>Paper: Table 4, Appendix A.1. By duration the corpus is mostly locomotion/idle; object interaction is roughly a quarter.</p>
   <table>
@@ -71,9 +64,6 @@
   <div class="grid" id="hoi"></div>
   <p class="note">Not shown yet: GMR is object-agnostic, so contact-heavy OMOMO clips (table, chair) show hand/leg–object interpenetration. The paper uses OmniRetargeting for contact motions; we'll switch those clips over and post them then.</p>
 
-  <h2>Stage I: imitation policy in physics <span class="tag">PPO, IsaacLab</span></h2>
-  <div class="grid" id="policy"></div>
-  <p class="note" id="policy-note"></p>
 </main>
 
 <script>
@@ -94,7 +84,7 @@ function fill(id, items){
   if (!items.length) { g.innerHTML = '<p class="note">(coming soon)</p>'; return; }
   g.innerHTML = items.map(v => `<figure><video src="videos/${v.file}" controls muted loop playsinline preload="metadata"></video><figcaption>${v.cap}</figcaption></figure>`).join("");
 }
-fill("loco", LOCO); fill("hoi", HOI); fill("policy", POLICY);
+fill("loco", LOCO); fill("hoi", HOI);
 </script>
 </body>
 </html>
