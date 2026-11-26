@@ -16,8 +16,10 @@ if ! command -v sshd >/dev/null; then
   apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq openssh-server >/dev/null
 fi
 mkdir -p /run/sshd ~/.ssh && chmod 700 ~/.ssh
-# RunPod 把账户里的公钥放在 $PUBLIC_KEY
-if [ -n "${PUBLIC_KEY:-}" ]; then echo "$PUBLIC_KEY" >> ~/.ssh/authorized_keys; sort -u -o ~/.ssh/authorized_keys ~/.ssh/authorized_keys; chmod 600 ~/.ssh/authorized_keys; fi
+# RunPod 把账户里的公钥放在 $PUBLIC_KEY，但迁移出来的 Pod 里这个变量常是空的，所以把 Mac 的公钥也直接写上
+echo "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDtx4r6WikcPgEy/4b0eos2AVxKcSRNo6rvzff1qRlj3 jychen227@gmail.com" >> ~/.ssh/authorized_keys
+if [ -n "${PUBLIC_KEY:-}" ]; then echo "$PUBLIC_KEY" >> ~/.ssh/authorized_keys; fi
+sort -u -o ~/.ssh/authorized_keys ~/.ssh/authorized_keys; chmod 600 ~/.ssh/authorized_keys
 sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
 pgrep -x sshd >/dev/null || /usr/sbin/sshd
 echo "sshd 运行中: $(pgrep -xc sshd) 个进程"
@@ -42,6 +44,7 @@ log "5/5 仓库自检"
 cd /data/chip-repro && $PY -p -m pytest -q tests 2>&1 | tail -1
 
 echo
-echo "完成。常用路径："
+echo "完成。直连: ssh root@${RUNPOD_PUBLIC_IP:-?} -p ${RUNPOD_TCP_PORT_22:-?} -i ~/.ssh/id_ed25519"
+echo "常用路径："
 echo "  代码 /data/chip-repro   数据 /data/datasets   重定向结果 /data/robot_clips   GMR /data/GMR"
 echo "  CPU 配额: $(cat /sys/fs/cgroup/cpu.max 2>/dev/null || echo '?')   GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader)"

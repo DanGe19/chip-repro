@@ -134,7 +134,11 @@ def build_scene_model(robot_xml: Path, meta: dict, data_roots: dict[str, Path], 
         else:
             s = float(meta["world_scale"])
             spec.add_mesh(name="scene", file=str(scene_file), scale=[s, s, s])
-            body = spec.worldbody.add_body(name="scene", pos=meta["world_offset"].tolist())
+            # TRUMANS 的场景 .obj 是 Y 朝上的世界坐标，人/物体位姿已转成 Z 朝上，场景也要转：
+            # 绕 x 轴 +90°（Y-up→Z-up），四元数 (w,x,y,z) = (cos45°, sin45°, 0, 0)。
+            # 物体网格不用转：物体位姿 pose_zup = M·pose_yup 已经把"物体自身坐标→Z-up 世界"包含进去了。
+            quat = [0.7071068, 0.7071068, 0.0, 0.0] if meta["source"] == "trumans" else [1.0, 0.0, 0.0, 0.0]
+            body = spec.worldbody.add_body(name="scene", pos=meta["world_offset"].tolist(), quat=quat)
             body.add_geom(type=mj.mjtGeom.mjGEOM_MESH, meshname="scene", rgba=(0.75, 0.75, 0.75, 1.0),
                           contype=0, conaffinity=0)
     try:
