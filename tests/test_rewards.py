@@ -113,3 +113,16 @@ def test_yaw_quat_and_angle():
     q = _yaw(1.0)
     assert torch.allclose(yaw_quat(q[None])[0], q)
     assert quat_angle(_yaw(0.0)[None], _yaw(1.0)[None]).item() == pytest.approx(1.0, abs=1e-5)
+
+
+def test_anchor_lin_vel_term():
+    from chip.envs.rewards import RewardCfg, Term, imitation_reward
+    cfg = RewardCfg(terms={"anchor_lin_vel": Term(0.5, 0.5)})
+    ref = make_state(); cur = make_state()
+    ref["root_lin_vel"] = torch.tensor([[1.0, 0.0, 0.0]]).expand(4, 3)
+    cur["root_lin_vel"] = torch.zeros(4, 3)
+    _, terms = imitation_reward(cur, ref, cfg)
+    assert torch.allclose(terms["anchor_lin_vel"], torch.full((4,), 0.5 * math.exp(-4.0)), atol=1e-6)
+    cur["root_lin_vel"] = ref["root_lin_vel"].clone()
+    _, terms = imitation_reward(cur, ref, cfg)
+    assert torch.allclose(terms["anchor_lin_vel"], torch.full((4,), 0.5))

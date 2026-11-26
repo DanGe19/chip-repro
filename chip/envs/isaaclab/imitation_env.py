@@ -60,7 +60,12 @@ class G1ImitationEnvCfg(DirectRLEnvCfg):
 
     # ---- 空间（observation_space 在 __init__ 里按刚体数重算）----
     action_space = 29
-    observation_space = 1 + 4 + 3 + 3 + 29 + 29 + 29 + 29 + 3 + 4 + 3 * len(DEFAULT_TRACKED_BODIES)
+    # 本体 98 + 每个未来时刻 (29 + 3 + 4 + 3B)；在 __post_init__ 里按 ref_lookahead_s 和 tracked_bodies 重算
+    observation_space = 98 + 4 * (29 + 3 + 4 + 3 * len(DEFAULT_TRACKED_BODIES))
+
+    def __post_init__(self):
+        super().__post_init__()
+        self.observation_space = 98 + len(self.ref_lookahead_s) * (29 + 3 + 4 + 3 * len(self.tracked_bodies))
     state_space = 0
     action_scale = 0.5                 # 动作 ∈ [-1,1] → ±0.5 rad 偏移
 
@@ -70,7 +75,9 @@ class G1ImitationEnvCfg(DirectRLEnvCfg):
     motion_clip_ids: tuple[str, ...] | None = None    # 只用这些片段（调试：一条走路片段）
     motion_limit: int | None = None
     tracked_bodies: tuple[str, ...] = DEFAULT_TRACKED_BODIES
-    ref_lookahead_s: float = 0.02                      # 观测里给的未来参考：下一帧
+    ref_lookahead_s: tuple[float, ...] = (0.02, 0.1, 0.3, 0.6)   # 观测里给的未来参考时刻（秒）
+    anchor_pos_sigma: float | None = 0.15                       # 覆盖 yaml 里的 anchor_pos σ（None=不覆盖）
+    anchor_lin_vel_weight: float = 0.5                          # 新增根部速度跟踪项（σ=0.5 m/s）；0=关闭
 
     # ---- 奖励 / 终止 ----
     reward_cfg_path: str = str(Path(__file__).resolve().parents[3] / "configs" / "stage1_imitation.yaml")
@@ -109,6 +116,11 @@ class G1ImitationEnv(DirectRLEnv):
         self.reward_cfg.dt = cfg.sim.dt * cfg.decimation
         if "action_rate" in self.reward_cfg.penalties:
             self.reward_cfg.penalties["action_rate"] *= cfg.action_rate_scale
+        if cfg.anchor_pos_sigma is not None and "anchor_pos" in self.reward_cfg.terms:
+            self.reward_cfg.terms["anchor_pos"].sigma = cfg.anchor_pos_sigma
+        if cfg.anchor_lin_vel_weight > 0:
+            from chip.envs.rewards import Term
+            self.reward_cfg.terms["anchor_lin_vel"] = Term(cfg.anchor_lin_vel_weight, 0.5)
 
         N = self.num_envs
         self.clip_idx = torch.zeros(N, dtype=torch.long, device=self.device)
@@ -190,20 +202,20 @@ class G1ImitationEnv(DirectRLEnv):
     # ------------------------------------------------------------------ 观测 / 奖励 / 终止
     def _get_observations(self) -> dict:
         cur = self._cur_state()
-        ref = self._ref_state(self.cfg.ref_lookahead_s)
         q = cur["anchor_rot"]
         q_inv = quat_conj(q)
-        # 基座系下的量
+        # 本体（基座系）
         lin_b = quat_rotate_inverse(q, cur["root_lin_vel"])
         ang_b = quat_rotate_inverse(q, cur["root_ang_vel"])
-        ref_root_b = quat_rotate_inverse(q, ref["anchor_pos"] - cur["anchor_pos"])
-        ref_rot_rel = quat_mul(q_inv, ref["anchor_rot"])
-        ref_body_b = quat_rotate_inverse(q[:, None, :], ref["body_pos"] - cur["anchor_pos"][:, None, :])
-        obs = torch.cat([
-            cur["anchor_pos"][:, 2:3], q, lin_b, ang_b,
-            cur["dof_pos"], cur["dof_vel"] * 0.1, self.actions,
-            ref["dof_pos"] - cur["dof_pos"], ref_root_b, ref_rot_rel, ref_body_b.flatten(1),
-        ], dim=-1)
+        parts = [cur["anchor_pos"][:, 2:3], q, lin_b, ang_b, cur["dof_pos"], cur["dof_vel"] * 0.1, self.actions]
+        # 未来多个时刻的参考，全部表达在当前基座系里："目标在我前方多远、朝向差多少、各部位该在哪"
+        for dt_ahead in self.cfg.ref_lookahead_s:
+            ref = self._ref_state(dt_ahead)
+            ref_root_b = quat_rotate_inverse(q, ref["anchor_pos"] - cur["anchor_pos"])
+            ref_rot_rel = quat_mul(q_inv, ref["anchor_rot"])
+            ref_body_b = quat_rotate_inverse(q[:, None, :], ref["body_pos"] - cur["anchor_pos"][:, None, :])
+            parts += [ref["dof_pos"] - cur["dof_pos"], ref_root_b, ref_rot_rel, ref_body_b.flatten(1)]
+        obs = torch.cat(parts, dim=-1)
         return {"policy": torch.nan_to_num(obs).clamp(-50, 50)}
 
     def _get_rewards(self) -> torch.Tensor:

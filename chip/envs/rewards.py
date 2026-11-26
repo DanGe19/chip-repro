@@ -159,6 +159,9 @@ def imitation_reward(cur: dict, ref: dict, cfg: RewardCfg,
     if "anchor_rot" in T:
         e = quat_angle(cur["anchor_rot"], ref["anchor_rot"])
         terms["anchor_rot"] = T["anchor_rot"].weight * rbf(e, T["anchor_rot"].sigma)
+    if "anchor_lin_vel" in T and "root_lin_vel" in cur and "root_lin_vel" in ref:
+        e = (cur["root_lin_vel"] - ref["root_lin_vel"]).norm(dim=-1)
+        terms["anchor_lin_vel"] = T["anchor_lin_vel"].weight * rbf(e, T["anchor_lin_vel"].sigma)
 
     # ---- 相对身体 ----
     c_rel = _to_anchor_frame(cur, cfg.relative_frame)
