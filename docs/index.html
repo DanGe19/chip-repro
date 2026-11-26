@@ -69,7 +69,7 @@
 
   <h3>Object interaction (OMOMO)</h3>
   <div class="grid" id="hoi"></div>
-  <p class="note">GMR is object-agnostic, so contact-heavy clips (e.g. the table) show interpenetration. Expected; the paper uses OmniRetargeting for contact motions, which we plan to switch to for those clips.</p>
+  <p class="note">Not shown yet: GMR is object-agnostic, so contact-heavy OMOMO clips (table, chair) show hand/leg–object interpenetration. The paper uses OmniRetargeting for contact motions; we'll switch those clips over and post them then.</p>
 
   <h2>Stage I: imitation policy in physics <span class="tag">PPO, IsaacLab</span></h2>
   <div class="grid" id="policy"></div>
@@ -84,10 +84,7 @@ const LOCO = [
   {file:"walk_03_bedroom.mp4", cap:"<b>Stand up from a chair, walk around the bed</b>"},
 ];
 const HOI = [
-  {file:"hoi_trashcan.mp4", cap:"<b>Trashcan</b> — pick up, carry, put down (OMOMO)"},
-  {file:"hoi_plasticbox.mp4", cap:"<b>Plastic box</b>"},
-  {file:"hoi_largetable.mp4", cap:"<b>Large table</b> — interpenetration from object-agnostic retargeting"},
-  {file:"hoi_woodchair.mp4", cap:"<b>Wooden chair</b>"},
+  // OMOMO 片段暂不展示：GMR 不考虑物体，接触重的动作有穿模，等换成物体感知的重定向再放。
 ];
 const POLICY = [
   // {file:"policy_walk_run2.mp4", cap:"Run 2 (4096 envs × 3000 iters) on one walking clip"},
