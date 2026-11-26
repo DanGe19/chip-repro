@@ -37,21 +37,20 @@
     Code: <a href="https://github.com/DanGe19/chip-repro">github.com/DanGe19/chip-repro</a>. Last updated: <span id="date">2026-11-26</span>.
   </p>
 
-  <h2>Data composition vs. the paper</h2>
-  <p>Paper: Table 4, Appendix A.1. By duration the corpus is mostly locomotion/idle; object interaction is roughly a quarter.</p>
+  <h2>Data</h2>
+  <p>Reference motions come from two public mocap datasets; hours are by <b>source</b>, not by per-frame motion content.</p>
   <table>
-    <tr><th>Source</th><th>Type</th><th>Paper files</th><th>Paper hours</th><th>Ours files</th><th>Ours hours</th></tr>
-    <tr><td>Standalone locomotion</td><td>locomotion</td><td class="num">6</td><td class="num">0.65</td><td class="num">—</td><td class="num">—</td></tr>
-    <tr><td>Box transport</td><td>interaction</td><td class="num">120</td><td class="num">0.73</td><td class="num">—</td><td class="num">—</td></tr>
-    <tr><td>TRUMANS (idle subset)</td><td>locomotion / idle in scenes</td><td class="num">1,486</td><td class="num">8.71</td><td class="num">1,856</td><td class="num">8.71</td></tr>
-    <tr><td>OMOMO (4 objects)</td><td>interaction</td><td class="num">1,214</td><td class="num">2.07</td><td class="num">1,323</td><td class="num">2.32</td></tr>
-    <tr><th>Total</th><th></th><th class="num">2,826</th><th class="num">12.17</th><th class="num">3,179</th><th class="num">11.03</th></tr>
+    <tr><th>Source</th><th>What people do in it</th><th>Objects</th><th>Scene</th><th>Clips</th><th>Hours</th><th>Share</th></tr>
+    <tr><td>TRUMANS (our "idle" subset)</td><td>walk, stand, sit down / stand up, move around furniture in scanned rooms (HSI)</td><td>no</td><td>yes</td><td class="num">1,856</td><td class="num">8.71</td><td class="num">79%</td></tr>
+    <tr><td>OMOMO (4 objects)</td><td>pick up / carry / put down a trashcan, plastic box, large table, wooden chair (HOI)</td><td>yes</td><td>no</td><td class="num">1,323</td><td class="num">2.32</td><td class="num">21%</td></tr>
+    <tr><th>Total</th><th></th><th></th><th></th><th class="num">3,179</th><th class="num">11.03</th><th></th></tr>
   </table>
   <p class="note">
-    Locomotion vs. interaction by hours: paper ≈ 77 / 23 %, ours ≈ 79 / 21 %.
-    The paper filters TRUMANS and OMOMO into subsets without stating the rule. Ours: OMOMO — all clips of the four objects used in the paper;
-    TRUMANS — contiguous segments with no object-interaction action label and the person standing/walking (pelvis-to-foot height &gt; 0.7 m), ≥ 3 s, subsampled to 8.71 h.
-    The two small components (standalone locomotion, box transport) are not yet included.
+    How the subsets were chosen. OMOMO: every clip of the four objects used in the paper.
+    TRUMANS: contiguous segments where none of the 10 object-manipulation action labels is active and the person is upright
+    (pelvis-to-foot height &gt; 0.7 m, so sitting/lying/crouching frames split a segment), at least 3 s long; segments are then randomly subsampled to 8.71 h
+    to match the TRUMANS budget in the paper (Table 4). "No manipulation label" is not "pure locomotion": these clips still contain sitting, standing up and moving around furniture.
+    The paper also uses two small extra sets (0.65 h standalone locomotion, 0.73 h box transport) that we don't have yet.
   </p>
 
   <h2>Retargeted reference motions <span class="tag">kinematic replay, no physics</span></h2>
