@@ -79,16 +79,18 @@
 <script>
 // 视频列表：放在 site/videos/ 下。改这里就行，不用动页面其它部分。
 const LOCO = [
-  // {file:"trumans_walk_01.mp4", cap:"Walking across a room"},
+  {file:"walk_01.mp4", cap:"<b>Walking</b> across an open room (TRUMANS, scanned scene drawn in)"},
+  {file:"walk_02.mp4", cap:"<b>Walking</b> past furniture"},
+  {file:"walk_03_bedroom.mp4", cap:"<b>Stand up from a chair, walk around the bed</b>"},
 ];
 const HOI = [
-  {file:"sub11_trashcan_003.mp4", cap:"<b>Trashcan</b> — pick up, carry, put down"},
-  {file:"sub12_plasticbox_002.mp4", cap:"<b>Plastic box</b>"},
-  {file:"sub15_largetable_002.mp4", cap:"<b>Large table</b> — interpenetration from object-agnostic retargeting"},
-  {file:"sub12_woodchair_002.mp4", cap:"<b>Wooden chair</b>"},
+  {file:"hoi_trashcan.mp4", cap:"<b>Trashcan</b> — pick up, carry, put down (OMOMO)"},
+  {file:"hoi_plasticbox.mp4", cap:"<b>Plastic box</b>"},
+  {file:"hoi_largetable.mp4", cap:"<b>Large table</b> — interpenetration from object-agnostic retargeting"},
+  {file:"hoi_woodchair.mp4", cap:"<b>Wooden chair</b>"},
 ];
 const POLICY = [
-  // {file:"walk_run2_env0.mp4", cap:"Run 2 (4096 envs × 3000 iters) on one TRUMANS walking clip"},
+  // {file:"policy_walk_run2.mp4", cap:"Run 2 (4096 envs × 3000 iters) on one walking clip"},
 ];
 function fill(id, items){
   const g = document.getElementById(id);
