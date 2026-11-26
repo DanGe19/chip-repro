@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CHIP reproduction on Unitree G1 — progress</title>
+<style>
+  :root { --fg:#1b1b1b; --muted:#666; --line:#e4e4e4; --accent:#2b5fb5; --bg:#fff; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; color:var(--fg); background:var(--bg); }
+  main { max-width:1100px; margin:0 auto; padding:40px 24px 80px; }
+  h1 { font-size:30px; margin:0 0 6px; }
+  .sub { color:var(--muted); margin:0 0 28px; }
+  h2 { font-size:21px; margin:44px 0 10px; padding-top:18px; border-top:1px solid var(--line); }
+  p { margin:8px 0; max-width:820px; }
+  a { color:var(--accent); }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(320px, 1fr)); gap:18px; margin-top:14px; }
+  figure { margin:0; }
+  video { width:100%; aspect-ratio:4/3; background:#000; border-radius:6px; display:block; }
+  figcaption { font-size:13px; color:var(--muted); margin-top:6px; }
+  figcaption b { color:var(--fg); font-weight:600; }
+  table { border-collapse:collapse; margin:12px 0; font-size:14px; }
+  th, td { border:1px solid var(--line); padding:6px 10px; text-align:left; }
+  th { background:#f6f6f6; font-weight:600; }
+  td.num { text-align:right; font-variant-numeric:tabular-nums; }
+  .note { font-size:14px; color:var(--muted); }
+  .tag { display:inline-block; font-size:12px; padding:1px 7px; border-radius:10px; background:#eef3fb; color:var(--accent); margin-left:6px; vertical-align:middle; }
+  ul { max-width:820px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>CHIP reproduction on Unitree G1</h1>
+  <p class="sub">
+    Reproducing <a href="https://arxiv.org/abs/2609.06591">Unifying Physics-Based Humanoid Interaction with a Context-Conditioned Interaction Prior</a>
+    (Li, Chen, Wong — SIGGRAPH Asia 2026) in IsaacLab, as a base for a sampling-based planner (MPPI/CEM) on top.
+    Code: <a href="https://github.com/DanGe19/chip-repro">github.com/DanGe19/chip-repro</a>. Last updated: <span id="date">2026-11-26</span>.
+  </p>
+
+  <h2>Status</h2>
+  <ul>
+    <li><b>Data pipeline done.</b> TRUMANS + OMOMO loaded into a common format (3,179 clips, 11.0 h), retargeted to G1 with GMR, verified in MuJoCo and by kinematic replay in IsaacLab.</li>
+    <li><b>Stage I running.</b> IsaacLab imitation environment (RSI resets, paper's tracking reward, kinematic termination) + PPO. First experiments on a single walking clip; see below.</li>
+    <li>Next: scale Stage I to all clips / per-expert groups, then Stage II (VQ-VAE + context prior).</li>
+  </ul>
+
+  <h2>Data composition vs. the paper</h2>
+  <p>Paper: Table 4, Appendix A.1. By duration the corpus is mostly locomotion/idle; object interaction is roughly a quarter.</p>
+  <table>
+    <tr><th>Source</th><th>Type</th><th>Paper files</th><th>Paper hours</th><th>Ours files</th><th>Ours hours</th></tr>
+    <tr><td>Standalone locomotion</td><td>locomotion</td><td class="num">6</td><td class="num">0.65</td><td class="num">—</td><td class="num">—</td></tr>
+    <tr><td>Box transport</td><td>interaction</td><td class="num">120</td><td class="num">0.73</td><td class="num">—</td><td class="num">—</td></tr>
+    <tr><td>TRUMANS (idle subset)</td><td>locomotion / idle in scenes</td><td class="num">1,486</td><td class="num">8.71</td><td class="num">1,856</td><td class="num">8.71</td></tr>
+    <tr><td>OMOMO (4 objects)</td><td>interaction</td><td class="num">1,214</td><td class="num">2.07</td><td class="num">1,323</td><td class="num">2.32</td></tr>
+    <tr><th>Total</th><th></th><th class="num">2,826</th><th class="num">12.17</th><th class="num">3,179</th><th class="num">11.03</th></tr>
+  </table>
+  <p class="note">
+    Locomotion vs. interaction by hours: paper ≈ 77 / 23 %, ours ≈ 79 / 21 %.
+    The paper filters TRUMANS and OMOMO into subsets without stating the rule. Ours: OMOMO — all clips of the four objects used in the paper;
+    TRUMANS — contiguous segments with no object-interaction action label and the person standing/walking (pelvis-to-foot height &gt; 0.7 m), ≥ 3 s, subsampled to 8.71 h.
+    The two small components (standalone locomotion, box transport) are not yet included.
+  </p>
+
+  <h2>Retargeted reference motions <span class="tag">kinematic replay, no physics</span></h2>
+  <p>Human motion (SMPL-X) → G1 (29 DoF) via GMR. MuJoCo renders of the retargeting output; objects are drawn from the dataset's tracked poses.</p>
+
+  <h3>Locomotion / idle (TRUMANS)</h3>
+  <div class="grid" id="loco"></div>
+
+  <h3>Object interaction (OMOMO)</h3>
+  <div class="grid" id="hoi"></div>
+  <p class="note">GMR is object-agnostic, so contact-heavy clips (e.g. the table) show interpenetration. Expected; the paper uses OmniRetargeting for contact motions, which we plan to switch to for those clips.</p>
+
+  <h2>Stage I: imitation policy in physics <span class="tag">PPO, IsaacLab</span></h2>
+  <div class="grid" id="policy"></div>
+  <p class="note" id="policy-note"></p>
+</main>
+
+<script>
+// 视频列表：放在 site/videos/ 下。改这里就行，不用动页面其它部分。
+const LOCO = [
+  // {file:"trumans_walk_01.mp4", cap:"Walking across a room"},
+];
+const HOI = [
+  {file:"sub11_trashcan_003.mp4", cap:"<b>Trashcan</b> — pick up, carry, put down"},
+  {file:"sub12_plasticbox_002.mp4", cap:"<b>Plastic box</b>"},
+  {file:"sub15_largetable_002.mp4", cap:"<b>Large table</b> — interpenetration from object-agnostic retargeting"},
+  {file:"sub12_woodchair_002.mp4", cap:"<b>Wooden chair</b>"},
+];
+const POLICY = [
+  // {file:"walk_run2_env0.mp4", cap:"Run 2 (4096 envs × 3000 iters) on one TRUMANS walking clip"},
+];
+function fill(id, items){
+  const g = document.getElementById(id);
+  if (!items.length) { g.innerHTML = '<p class="note">(coming soon)</p>'; return; }
+  g.innerHTML = items.map(v => `<figure><video src="videos/${v.file}" controls muted loop playsinline preload="metadata"></video><figcaption>${v.cap}</figcaption></figure>`).join("");
+}
+fill("loco", LOCO); fill("hoi", HOI); fill("policy", POLICY);
+</script>
+</body>
+</html>

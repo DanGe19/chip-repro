@@ -262,12 +262,14 @@ class G1ImitationEnv(DirectRLEnv):
         q = ref["root_rot"]
         root_quat_wxyz = torch.cat([q[:, 3:4], q[:, :3]], dim=-1)
         self.robot.write_root_link_pose_to_sim(torch.cat([root_pos, root_quat_wxyz], dim=-1), env_ids)
-        self.robot.write_root_com_velocity_to_sim(torch.cat([ref["root_lin_vel"], ref["root_ang_vel"]], dim=-1), env_ids)
+        # 参考速度做个保险钳位：数据毛刺会把机器人"砸"向地面
+        root_vel = torch.cat([ref["root_lin_vel"].clamp(-2.0, 2.0), ref["root_ang_vel"].clamp(-4.0, 4.0)], dim=-1)
+        self.robot.write_root_com_velocity_to_sim(root_vel, env_ids)
 
         joint_pos = self.robot.data.default_joint_pos[env_ids].clone()
         joint_vel = torch.zeros_like(joint_pos)
         joint_pos[:, self.ctrl_ids] = ref["dof_pos"]
-        joint_vel[:, self.ctrl_ids] = ref["dof_vel"]
+        joint_vel[:, self.ctrl_ids] = ref["dof_vel"].clamp(-10.0, 10.0)
         self.robot.write_joint_state_to_sim(joint_pos, joint_vel, None, env_ids)
         self.actions[env_ids] = 0.0
         self.prev_actions[env_ids] = 0.0

@@ -81,6 +81,16 @@ def _quat_to_angvel_xyzw(q: np.ndarray, dt: float) -> np.ndarray:
     return np.concatenate([w, w[-1:]], axis=0)   # 最后一帧复制前一帧，保持长度 T
 
 
+def _clamp_edges(v: np.ndarray, n: int = 2) -> np.ndarray:
+    """片段首尾几帧的数值微分是单边差分，常有毛刺（实测 TRUMANS 某片段第 0 帧竖直速度 -3.2 m/s）。
+    用相邻内部帧的值覆盖首尾 n 帧。"""
+    v = np.array(v, copy=True)
+    if v.shape[0] > 2 * n + 1:
+        v[:n] = v[n]
+        v[-n:] = v[-n - 1]
+    return v
+
+
 def _resample_linear(x: np.ndarray, src_t: np.ndarray, dst_t: np.ndarray) -> np.ndarray:
     """沿第 0 维对任意形状数组做线性插值。"""
     flat = x.reshape(x.shape[0], -1)
@@ -127,9 +137,9 @@ def _prepare_clip(rm: RobotMotion, target_fps: float, dof_index: np.ndarray, bod
     root_rot = _resample_quat(_quat_normalize(rm.root_rot.astype(np.float64)), src_t, dst_t)
     dof_pos = _resample_linear(rm.dof_pos.astype(np.float64)[:, dof_index], src_t, dst_t)
 
-    root_lin_vel = np.gradient(root_pos, dt, axis=0)
-    root_ang_vel = _quat_to_angvel_xyzw(root_rot, dt)
-    dof_vel = np.gradient(dof_pos, dt, axis=0)
+    root_lin_vel = _clamp_edges(np.gradient(root_pos, dt, axis=0))
+    root_ang_vel = _clamp_edges(_quat_to_angvel_xyzw(root_rot, dt))
+    dof_vel = _clamp_edges(np.gradient(dof_pos, dt, axis=0))
 
     body_pos = body_vel = None
     if rm.body_pos is not None and body_index is not None:
@@ -137,7 +147,7 @@ def _prepare_clip(rm: RobotMotion, target_fps: float, dof_index: np.ndarray, bod
         local = _resample_linear(local, src_t, dst_t)                      # (T,B,3)
         world = root_pos[:, None, :] + _quat_rotate_xyzw(root_rot[:, None, :], local)
         body_pos = world
-        body_vel = np.gradient(world, dt, axis=0)
+        body_vel = _clamp_edges(np.gradient(world, dt, axis=0))
 
     return _Clip(rm.clip_id, rm.source, T, root_pos, root_rot, root_lin_vel, root_ang_vel,
                  dof_pos, dof_vel, body_pos, body_vel)
