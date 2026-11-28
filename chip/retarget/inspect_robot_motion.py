@@ -211,7 +211,8 @@ def numeric_report(model, data, fps, root_pos, root_rot, dof_pos, objects) -> st
 
     # 3) 根部
     lines.append(f"骨盆高度: 均值 {root_pos[:, 2].mean():.3f} m, 最低 {root_pos[:, 2].min():.3f} m  (G1 站直 ≈ 0.79)")
-    lines.append(f"水平位移: {np.linalg.norm(root_pos[-1, :2] - root_pos[0, :2]):.2f} m")
+    path_len = float(np.linalg.norm(np.diff(root_pos[:, :2], axis=0), axis=1).sum())
+    lines.append(f"水平位移: 起点到终点 {np.linalg.norm(root_pos[-1, :2] - root_pos[0, :2]):.2f} m, 走过的路径 {path_len:.2f} m")
 
     # 4) 手与物体
     if objects:

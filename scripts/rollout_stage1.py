@@ -68,7 +68,8 @@ def main():
     venv.reset()
     obs = venv.get_observations()
     N = args.num_envs
-    T_max = int(uenv.motion.durations.max().item() / uenv.step_dt) + 1
+    # 只记录到参考播完为止（参考播完环境会超时重置，再记就把"瞬移回起点"也记进去了）
+    T_max = int(uenv.motion.durations.max().item() / uenv.step_dt) - 1
     rp, rq, dq = [], [], []
     alive = torch.ones(N, dtype=torch.bool, device=uenv.device)
     fell_at = torch.full((N,), -1, dtype=torch.long, device=uenv.device)
