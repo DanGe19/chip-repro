@@ -33,3 +33,11 @@ class G1ImitationPPORunnerCfg(RslRlOnPolicyRunnerCfg):
         desired_kl=0.01,
         max_grad_norm=1.0,
     )
+
+
+@configclass
+class G1ImitationTrumansPPORunnerCfg(G1ImitationPPORunnerCfg):
+    """全量 TRUMANS 专家：单独的实验名，训得更久。"""
+    experiment_name = "chip_stage1_trumans"
+    max_iterations = 6000
+    save_interval = 200

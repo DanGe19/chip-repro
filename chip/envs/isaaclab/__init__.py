@@ -23,6 +23,15 @@ if gym is not None:
         },
     )
     gym.register(
+        id="Chip-G1-Imitation-Trumans-v0",
+        entry_point=f"{__name__}.imitation_env:G1ImitationEnv",
+        disable_env_checker=True,
+        kwargs={
+            "env_cfg_entry_point": f"{__name__}.imitation_env_cfgs:G1ImitationTrumansEnvCfg",
+            "rsl_rl_cfg_entry_point": f"{__name__}.agents.rsl_rl_ppo_cfg:G1ImitationTrumansPPORunnerCfg",
+        },
+    )
+    gym.register(
         id="Chip-G1-Imitation-Walk-v0",
         entry_point=f"{__name__}.imitation_env:G1ImitationEnv",
         disable_env_checker=True,

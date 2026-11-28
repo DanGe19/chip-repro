@@ -26,4 +26,8 @@ class G1ImitationOmomoEnvCfg(G1ImitationEnvCfg):
 
 @configclass
 class G1ImitationTrumansEnvCfg(G1ImitationEnvCfg):
+    """论文附录 A.2 的 "TRUMANS (idle)" 专家：整个 TRUMANS 子集（我们 1856 条 / 8.71 h）一个策略。
+    沿用 Walk 任务在第 3 轮验证过的设置。"""
     motion_sources = ("trumans",)
+    action_rate_scale = 0.1
+    termination_pos_thr = 1.0
