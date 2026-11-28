@@ -71,7 +71,10 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
     venv.reset()
     obs = venv.get_observations()
-    print(f"[collect] 环境就绪：{args.num_envs} env，obs {tuple(obs.shape)}，开始收集 {args.steps} 步")
+    # rsl_rl 的 wrapper 返回 TensorDict（按观测组），取 "policy" 这一组的张量
+    def as_tensor(o):
+        return o["policy"] if hasattr(o, "keys") else o
+    print(f"[collect] 环境就绪：{args.num_envs} env，obs {tuple(as_tensor(obs).shape)}，开始收集 {args.steps} 步")
     N = args.num_envs
     buf = {k: [] for k in ("obs", "action", "clip_idx", "ref_time", "done")}
     chunk_id, n_total, t0 = 0, 0, time.time()
@@ -96,7 +99,7 @@ def main():
             a = policy(obs)
             if args.noise_std > 0:
                 a = a + args.noise_std * torch.randn_like(a)
-            buf["obs"].append(obs.cpu().numpy())
+            buf["obs"].append(as_tensor(obs).cpu().numpy())
             buf["action"].append(a.cpu().numpy())
             buf["clip_idx"].append(uenv.clip_idx.cpu().numpy())
             buf["ref_time"].append(uenv.ref_time.cpu().numpy())
@@ -108,7 +111,7 @@ def main():
 
     meta = {
         "task": args.task, "checkpoint": str(ckpt), "num_envs": N, "steps": args.steps,
-        "obs_dim": int(obs.shape[1]), "prop_dim": PROP_DIM, "action_dim": 29,
+        "obs_dim": int(as_tensor(obs).shape[1]), "prop_dim": PROP_DIM, "action_dim": 29,
         "clip_ids": uenv.motion.clip_ids, "fps": uenv.motion.fps,
         "layout": "每个 chunk 的数组形状 (num_envs, T, ...)；done[i,t]=True 表示 t 之后重置，历史窗口不要跨过它",
     }
