@@ -44,6 +44,9 @@ DEFAULT_TRACKED_BODIES = (
 )
 # 允许接触地面的刚体（其它刚体碰到东西算 undesired contact）
 CONTACT_OK_BODIES = ("left_ankle_roll_link", "right_ankle_roll_link", "left_wrist_yaw_link", "right_wrist_yaw_link")
+# 观测的前 PROP_DIM 维是本体感知 s^prop（高度1 + 四元数4 + 基座线速3 + 角速3 + 关节角29 + 关节速29 + 上步动作29），
+# 后面是未来参考。Stage II 的 VQ 解码器和先验只用前 PROP_DIM 维。
+PROP_DIM = 1 + 4 + 3 + 3 + 29 + 29 + 29
 
 
 @configclass
@@ -60,12 +63,12 @@ class G1ImitationEnvCfg(DirectRLEnvCfg):
 
     # ---- 空间（observation_space 在 __init__ 里按刚体数重算）----
     action_space = 29
-    # 本体 98 + 每个未来时刻 (29 + 3 + 4 + 3B)；在 __post_init__ 里按 ref_lookahead_s 和 tracked_bodies 重算
-    observation_space = 98 + 4 * (29 + 3 + 4 + 3 * len(DEFAULT_TRACKED_BODIES))
+    # 本体 1+4+3+3+29+29+29 = 98；每个未来时刻 29 + 3 + 4 + 3B；在 __post_init__ 里按实际配置重算
+    observation_space = PROP_DIM + 4 * (29 + 3 + 4 + 3 * len(DEFAULT_TRACKED_BODIES))
 
     def __post_init__(self):
         super().__post_init__()
-        self.observation_space = 98 + len(self.ref_lookahead_s) * (29 + 3 + 4 + 3 * len(self.tracked_bodies))
+        self.observation_space = PROP_DIM + len(self.ref_lookahead_s) * (29 + 3 + 4 + 3 * len(self.tracked_bodies))
     state_space = 0
     action_scale = 0.5                 # 动作 ∈ [-1,1] → ±0.5 rad 偏移
 
