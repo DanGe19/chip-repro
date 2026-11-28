@@ -107,6 +107,10 @@ def main():
 if __name__ == "__main__":
     try:
         main()
+    except BaseException as e:  # noqa: BLE001
+        import traceback
+        traceback.print_exc()
+        print(f"[rollout] 异常退出: {type(e).__name__}: {e}", flush=True)
     finally:
         sys.stdout.flush()
         import threading

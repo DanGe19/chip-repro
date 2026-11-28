@@ -69,7 +69,9 @@ def main():
 
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
+    venv.reset()
     obs = venv.get_observations()
+    print(f"[collect] 环境就绪：{args.num_envs} env，obs {tuple(obs.shape)}，开始收集 {args.steps} 步")
     N = args.num_envs
     buf = {k: [] for k in ("obs", "action", "clip_idx", "ref_time", "done")}
     chunk_id, n_total, t0 = 0, 0, time.time()
@@ -118,6 +120,10 @@ def main():
 if __name__ == "__main__":
     try:
         main()
+    except BaseException as e:  # noqa: BLE001  任何异常（含 SystemExit）都打出来，别被看门狗静默吞掉
+        import traceback
+        traceback.print_exc()
+        print(f"[collect] 异常退出: {type(e).__name__}: {e}", flush=True)
     finally:
         sys.stdout.flush()
         import threading
